@@ -11,6 +11,7 @@ from app.controllers.app_controller import AppController
 from app.gui.models.video_table_model import VideoTableModel
 from app.gui.models.video_filter_proxy import VideoFilterProxyModel
 from app.gui.theme import STYLESHEET
+from app.gui.widgets.checkable_header import CheckableHeader
 from app.gui.widgets.panels import TitleBar,Sidebar,SourceCard,DownloadSettings,ProgressPanel,GeminiPanel
 
 
@@ -39,7 +40,7 @@ class MainWindow(QMainWindow):
         for w in (self.all_btn,self.list_btn,self.partial_btn): listbar.addWidget(w)
         listbar.addStretch(); listbar.addWidget(QLabel("Filter")); listbar.addWidget(self.filter); listbar.addWidget(self.search); lay.addLayout(listbar)
         self.model=VideoTableModel(); self.proxy=VideoFilterProxyModel(self); self.proxy.setSourceModel(self.model)
-        self.table=QTableView(); self.table.setModel(self.proxy); self.table.setAlternatingRowColors(True); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); self.table.setSortingEnabled(True); self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(58); self.table.setMinimumHeight(328); self.table.setMaximumHeight(350)
+        self.table=QTableView(); self.table.setModel(self.proxy);self.header=CheckableHeader(Qt.Horizontal,self.table);self.table.setHorizontalHeader(self.header); self.table.setAlternatingRowColors(True); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); self.table.setSortingEnabled(True); self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(58); self.table.setMinimumHeight(328); self.table.setMaximumHeight(350)
         hdr=self.table.horizontalHeader(); hdr.setSectionResizeMode(3,QHeaderView.Stretch)
         for c,w in {0:34,1:38,2:120,4:72,5:72,6:88,7:110,8:38}.items(): hdr.resizeSection(c,w)
         lay.addWidget(self.table)
@@ -57,7 +58,7 @@ class MainWindow(QMainWindow):
 
     def _wire(self):
         self.sidebar.page_requested.connect(self._go_page); self.url.returnPressed.connect(self._analyze); self.analyze_btn.clicked.connect(self._analyze); self.list_btn.clicked.connect(self._analyze); self.start_btn.clicked.connect(lambda:self._start(False)); self.all_btn.clicked.connect(lambda:self._start(True)); self.partial_btn.clicked.connect(self._select_mode)
-        self.search.textChanged.connect(self.proxy.set_search); self.filter.currentTextChanged.connect(self._apply_filter); self.settings.changed.connect(lambda d:self.controller.update_intent(**d)); self.progress.pause_clicked.connect(self.controller.pause); self.progress.resume_clicked.connect(self.controller.resume); self.progress.cancel_clicked.connect(self.controller.cancel); self.ai.send.connect(self.controller.interpret_ai); self.model.dataChanged.connect(self._sync_selected)
+        self.search.textChanged.connect(self.proxy.set_search); self.filter.currentTextChanged.connect(self._apply_filter); self.settings.changed.connect(lambda d:self.controller.update_intent(**d)); self.progress.pause_clicked.connect(self.controller.pause); self.progress.resume_clicked.connect(self.controller.resume); self.progress.cancel_clicked.connect(self.controller.cancel); self.ai.send.connect(self.controller.interpret_ai); self.model.dataChanged.connect(self._sync_selected);self.model.dataChanged.connect(lambda *_:self.header.viewport().update())
         self.controller.source_loaded.connect(self._source_loaded); self.controller.analysis_failed.connect(self._analysis_error); self.controller.job_changed.connect(self._job_changed); self.controller.ai_reply.connect(lambda text,_:self.ai.add_ai(text)); self.controller.ai_status.connect(self.ai.status.setText); self.controller.state_changed.connect(self._state_changed); self.source_card.open_channel.connect(self._open_channel)
 
     def _go_page(self,name):
@@ -65,7 +66,7 @@ class MainWindow(QMainWindow):
     def _analyze(self):
         self.analyze_btn.setEnabled(False); self.analyze_btn.setText("Menganalisis…"); self.controller.analyze(self.url.text())
     def _source_loaded(self,s):
-        self.analyze_btn.setEnabled(True); self.analyze_btn.setText("Analisis"); self.source_card.set_source(s); self.model.set_items(s.items); self._sync_selected(); self._apply_filter(); self._refresh_extra()
+        self.analyze_btn.setEnabled(True); self.analyze_btn.setText("Analisis"); self.source_card.set_source(s); self.model.set_items(s.items); self._sync_selected(); self._apply_filter();self.header.viewport().update(); self._refresh_extra()
     def _analysis_error(self,msg):
         self.analyze_btn.setEnabled(True); self.analyze_btn.setText("Analisis"); self.source_card.title.setText("Analisis gagal"); self.source_card.desc.setText(msg)
     def _start(self,all_items):
@@ -73,10 +74,14 @@ class MainWindow(QMainWindow):
             self._analyze(); return
         n=self.controller.queue_selected(all_items=all_items); self.ai.add_ai(f"{n} video dimasukkan ke antrean sesuai filter Shorts/Live dan pengaturan aktif.")
     def _select_mode(self):
-        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection); self.ai.add_ai("Mode Pilih Sebagian aktif. Centang baris yang ingin diunduh, lalu tekan Mulai Unduh.")
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        for item in self.model.items:item.selected=False
+        if self.model.items:
+            top=self.model.index(0,0);bottom=self.model.index(len(self.model.items)-1,0);self.model.dataChanged.emit(top,bottom,[Qt.CheckStateRole])
+        self._sync_selected();self.header.viewport().update();self.ai.add_ai("Mode Pilih Sebagian aktif. Pilihan dikosongkan; centang video yang ingin diunduh, lalu tekan Mulai Unduh.")
     def _sync_selected(self,*_): self.controller.state.selected_ids={i.id for i in self.model.items if i.selected}
     def _apply_filter(self,*_):
-        choice=self.filter.currentText();self.proxy.set_kind(None if choice=="Semua jenis" else choice);self.proxy.set_search(self.search.text())
+        choice=self.filter.currentText();self.proxy.set_kind(None if choice=="Semua jenis" else choice);self.proxy.set_search(self.search.text());self.header.viewport().update()
     def _job_changed(self,j):
         self.progress.set_job(j); self._refresh_extra()
         for item in self.model.items:
