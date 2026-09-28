@@ -1,73 +1,30 @@
-# YouTube Bulk Downloader
+# Pengunduh YouTube Massal
 
-Aplikasi Windows untuk mengunduh video yang memang kamu berhak unduh dari YouTube,
-baik satu video, playlist, maupun channel, dengan `yt-dlp` sebagai engine lokal.
+Aplikasi Windows desktop untuk menganalisis dan mengunduh video, playlist, atau channel YouTube secara massal dengan antarmuka PySide6 berbahasa Indonesia. Gemini hanya menerjemahkan bahasa manusia menjadi intent terstruktur; seluruh analisis, antrean, dan unduhan tetap dijalankan engine lokal.
 
-## Arah arsitektur
+## Fitur
+- UI tiga kolom mengikuti `docs/reference/youtube-bulk-downloader-id.png`: sidebar, workspace, Agen AI Gemini.
+- Video/playlist/channel, tabel seleksi, pencarian/filter, progres, antrean paralel video, jeda/lanjut/batal.
+- 1080p sebagai batas maksimum yang ketat, mode audio, subtitle/thumbnail/metadata, archive anti-duplikat.
+- Gemini sampai 100 API key dengan rotasi; tanpa key tetap ada parser lokal. Model default `gemini-3.8-flash` dapat diubah lewat `GEMINI_MODEL`.
+- CLI lama tetap tersedia: `python main.py "cek URL" --url <URL>`; tanpa argumen membuka GUI.
+- Build Windows `onedir` + ZIP portable dan FFmpeg/ffprobe melalui GitHub Actions.
 
-- **yt-dlp**: engine download.
-- **FFmpeg**: merge/convert audio-video.
-- **PySide6**: GUI Windows (tahap berikutnya).
-- **Gemini Agent**: memahami bahasa manusia dan mengubahnya menjadi intent JSON.
-- **Executor lokal**: hanya menjalankan aksi yang sudah didefinisikan aplikasi.
-  Gemini tidak diberi akses shell.
-
-Contoh perintah:
-
-```text
-download semua video channel ini 1080p, jangan shorts, sertakan subtitle
-ambil playlist ini jadi audio mp3
-cek isi channel ini dulu
-download 720p dan jangan download ulang file yang sudah pernah selesai
+## Menjalankan dari source
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install ".[gui,dev]"
+python main.py
 ```
+Salin `.env.example` ke `.env` bila memakai Gemini. Jangan commit API key.
 
-Contoh hasil intent:
-
-```json
-{
-  "action": "download",
-  "source_type": "channel",
-  "mode": "video",
-  "quality": "1080p",
-  "include_shorts": false,
-  "include_subtitles": true,
-  "use_archive": true
-}
+## Build portable Windows
+```powershell
+pip install ".[gui,dev]"
+.\scripts\build_windows.ps1
 ```
+Hasil: `release/Pengunduh-YouTube-Massal-Windows-portable.zip`.
 
-## Gemini
-
-Gunakan `.env`:
-
-```env
-GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-3.8-flash
-```
-
-Bisa juga mengisi `GEMINI_API_KEYS` dengan beberapa API key resmi yang kamu miliki.
-Agent membatasi daftar key maksimal 100 dan dapat berpindah key pada error kuota,
-rate-limit, atau autentikasi. Jika Gemini tidak tersedia, parser lokal tetap mencoba
-memahami perintah dasar.
-
-## Menjalankan prototype
-
-```bash
-python -m pip install -e .
-python main.py "download channel ini 1080p jangan shorts" --url "URL_CHANNEL"
-```
-
-Untuk benar-benar menjalankan download:
-
-```bash
-python main.py "download channel ini 1080p jangan shorts" --url "URL_CHANNEL" --execute
-```
-
-## Tahap berikutnya
-
-1. Import/adapt fondasi GUI PySide6 dari `Plutoeat/yt-dlp-gui` dengan mempertahankan
-   atribusi lisensi MIT yang diperlukan.
-2. Buat tampilan modern Bahasa Indonesia.
-3. Hubungkan kotak chat AI ke `GeminiLanguageAgent`.
-4. Tampilkan preview intent sebelum eksekusi.
-5. Queue, pause/resume, progress per video, archive, cookie/login, subtitle, thumbnail.
-6. Packaging Windows portable ZIP beserta FFmpeg/yt-dlp yang dibutuhkan.
+## Batasan
+Jeda menghentikan transfer melalui hook yt-dlp dan resume menjadwalkan ulang dengan `.part`; keberhasilan resume byte-perfect tetap bergantung server/protokol. Klasifikasi Shorts dari ekstraksi flat bisa belum diketahui sampai metadata video lengkap tersedia. Gunakan aplikasi hanya untuk konten yang memang berhak Anda unduh.
