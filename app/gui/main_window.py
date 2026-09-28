@@ -4,7 +4,7 @@ import webbrowser
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLineEdit,QPushButton,QScrollArea,QTableView,
-    QAbstractItemView,QSplitter,QStackedWidget,QLabel,QFrame,QComboBox,QTextEdit,QHeaderView
+    QAbstractItemView,QSplitter,QStackedWidget,QLabel,QTextEdit,QHeaderView
 )
 
 from app.controllers.app_controller import AppController
@@ -31,14 +31,15 @@ class MainWindow(QMainWindow):
         self._wire(); self.settings.load_intent(self.controller.state.intent); self._refresh_disk()
 
     def _build_home(self):
-        scroll=QScrollArea(); scroll.setWidgetResizable(True); canvas=QWidget(); scroll.setWidget(canvas); lay=QVBoxLayout(canvas); lay.setContentsMargins(15,16,15,10); lay.setSpacing(12)
+        scroll=QScrollArea();scroll.setObjectName("WorkspaceScroll");scroll.viewport().setObjectName("WorkspaceViewport");scroll.setWidgetResizable(True);scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        canvas=QWidget();canvas.setObjectName("Workspace");scroll.setWidget(canvas);lay=QVBoxLayout(canvas);lay.setContentsMargins(15,16,15,10);lay.setSpacing(12)
         toolbar=QHBoxLayout(); self.url=QLineEdit(); self.url.setPlaceholderText("Tempel URL video, playlist, atau channel YouTube…"); self.analyze_btn=QPushButton("Analisis"); self.start_btn=QPushButton("Mulai Unduh"); self.start_btn.setObjectName("Primary"); toolbar.addWidget(self.url,1); toolbar.addWidget(self.analyze_btn); toolbar.addWidget(self.start_btn); lay.addLayout(toolbar)
         self.source_card=SourceCard(); lay.addWidget(self.source_card)
-        listbar=QHBoxLayout(); self.all_btn=QPushButton("Unduh Semua"); self.list_btn=QPushButton("Tampilkan Daftar Video"); self.partial_btn=QPushButton("Pilih Sebagian"); self.filter=QComboBox(); self.filter.addItems(["Semua jenis","Video","Shorts","Live"]); self.search=QLineEdit(); self.search.setPlaceholderText("Cari video"); self.search.setMaximumWidth(240)
+        listbar=QHBoxLayout(); self.all_btn=QPushButton("Unduh Semua"); self.list_btn=QPushButton("Tampilkan Daftar Video"); self.partial_btn=QPushButton("Pilih Sebagian"); self.filter=__import__('PySide6.QtWidgets',fromlist=['QComboBox']).QComboBox(); self.filter.addItems(["Semua jenis","Video","Shorts","Live"]); self.search=QLineEdit(); self.search.setPlaceholderText("Cari video"); self.search.setMaximumWidth(240)
         for w in (self.all_btn,self.list_btn,self.partial_btn): listbar.addWidget(w)
         listbar.addStretch(); listbar.addWidget(QLabel("Filter")); listbar.addWidget(self.filter); listbar.addWidget(self.search); lay.addLayout(listbar)
         self.model=VideoTableModel(); self.proxy=VideoFilterProxyModel(self); self.proxy.setSourceModel(self.model)
-        self.table=QTableView(); self.table.setModel(self.proxy); self.table.setAlternatingRowColors(True); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); self.table.setSortingEnabled(True); self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(58); self.table.setMinimumHeight(280); self.table.setMaximumHeight(360)
+        self.table=QTableView(); self.table.setModel(self.proxy); self.table.setAlternatingRowColors(True); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); self.table.setSortingEnabled(True); self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(58); self.table.setMinimumHeight(328); self.table.setMaximumHeight(350)
         hdr=self.table.horizontalHeader(); hdr.setSectionResizeMode(3,QHeaderView.Stretch)
         for c,w in {0:34,1:38,2:120,4:72,5:72,6:88,7:110,8:38}.items(): hdr.resizeSection(c,w)
         lay.addWidget(self.table)
@@ -47,7 +48,7 @@ class MainWindow(QMainWindow):
         return scroll
 
     def _build_extra(self,name):
-        w=QWidget(); lay=QVBoxLayout(w); lay.setContentsMargins(22,22,22,22); title=QLabel(name); title.setObjectName("Heading"); lay.addWidget(title)
+        w=QWidget();w.setObjectName("Workspace");lay=QVBoxLayout(w); lay.setContentsMargins(22,22,22,22); title=QLabel(name); title.setObjectName("Heading"); lay.addWidget(title)
         box=QTextEdit(); box.setReadOnly(True); box.setObjectName(f"{name}Text"); lay.addWidget(box,1)
         if name=="Pengaturan":
             box.setHtml("<b>Gemini</b><br>API key dibaca dari GEMINI_API_KEYS / GEMINI_API_KEY dan tidak disimpan di repository.<br><br><b>Model</b><br>gemini-3.8-flash (dapat dioverride lewat GEMINI_MODEL).<br><br><b>Portable</b><br>Konfigurasi non-rahasia tersimpan di folder data aplikasi.")
@@ -75,9 +76,7 @@ class MainWindow(QMainWindow):
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection); self.ai.add_ai("Mode Pilih Sebagian aktif. Centang baris yang ingin diunduh, lalu tekan Mulai Unduh.")
     def _sync_selected(self,*_): self.controller.state.selected_ids={i.id for i in self.model.items if i.selected}
     def _apply_filter(self,*_):
-        choice=self.filter.currentText()
-        self.proxy.set_kind(None if choice=="Semua jenis" else choice)
-        self.proxy.set_search(self.search.text())
+        choice=self.filter.currentText();self.proxy.set_kind(None if choice=="Semua jenis" else choice);self.proxy.set_search(self.search.text())
     def _job_changed(self,j):
         self.progress.set_job(j); self._refresh_extra()
         for item in self.model.items:
@@ -92,11 +91,8 @@ class MainWindow(QMainWindow):
     def _refresh_extra(self):
         state=self.controller.state; jobs=state.jobs
         self.extra_pages["Unduhan"].findChild(QTextEdit).setPlainText("\n".join(f"{j.video.title} — {j.status}" for j in jobs) or "Belum ada antrean.")
-        src=state.source
-        self.extra_pages["Playlist"].findChild(QTextEdit).setPlainText(src.title if src and src.source_type=="playlist" else "Belum ada playlist dianalisis.")
-        self.extra_pages["Channel"].findChild(QTextEdit).setPlainText(src.title if src and src.source_type=="channel" else "Belum ada channel dianalisis.")
-        completed=[j for j in jobs if str(j.status)=="completed"]
-        self.extra_pages["Riwayat"].findChild(QTextEdit).setPlainText("\n".join(j.video.title for j in completed) or "Belum ada unduhan selesai.")
+        src=state.source;self.extra_pages["Playlist"].findChild(QTextEdit).setPlainText(src.title if src and src.source_type=="playlist" else "Belum ada playlist dianalisis.");self.extra_pages["Channel"].findChild(QTextEdit).setPlainText(src.title if src and src.source_type=="channel" else "Belum ada channel dianalisis.")
+        completed=[j for j in jobs if str(j.status)=="completed"];self.extra_pages["Riwayat"].findChild(QTextEdit).setPlainText("\n".join(j.video.title for j in completed) or "Belum ada unduhan selesai.")
     def _open_channel(self):
         s=self.controller.state.source
         if s and s.channel_url: webbrowser.open(s.channel_url)
