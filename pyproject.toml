@@ -1,20 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "youtube-bulk-downloader"
-version = "0.1.0"
-description = "Windows-friendly bulk YouTube downloader with a Gemini natural-language intent layer."
+version = "0.2.0"
+description = "Portable Windows bulk YouTube downloader with Gemini natural-language control."
 requires-python = ">=3.11"
 dependencies = [
   "google-genai>=1.0.0",
   "pydantic>=2.7",
   "python-dotenv>=1.0",
-  "yt-dlp",
+  "yt-dlp>=2026.8.0",
 ]
 
 [project.optional-dependencies]
-gui = [
-  "PySide6>=6.7",
-]
+gui = ["PySide6>=6.7"]
+dev = ["pytest>=8.0", "pyinstaller>=6.0"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py311"
