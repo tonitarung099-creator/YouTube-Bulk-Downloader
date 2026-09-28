@@ -2,6 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -20,7 +21,7 @@ def test_reference_shell_geometry():
 
 def test_gemini_enter_submits_but_shift_enter_adds_line():
     app=_app();panel=GeminiPanel();sent=[];panel.send.connect(sent.append);panel.input.setPlainText("cek dulu berapa video");panel.input.setFocus();QTest.keyClick(panel.input,Qt.Key_Return);app.processEvents();assert sent==["cek dulu berapa video"]
-    panel.input.setPlainText("baris satu");panel.input.moveCursor(panel.input.textCursor().End);QTest.keyClick(panel.input,Qt.Key_Return,Qt.ShiftModifier);app.processEvents();assert "\n" in panel.input.toPlainText()
+    panel.input.setPlainText("baris satu");panel.input.moveCursor(QTextCursor.End);QTest.keyClick(panel.input,Qt.Key_Return,Qt.ShiftModifier);app.processEvents();assert "\n" in panel.input.toPlainText()
 
 
 def test_settings_load_intent_syncs_formats_without_emitting_changes(tmp_path):
