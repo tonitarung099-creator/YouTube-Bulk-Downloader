@@ -1,194 +1,76 @@
 from __future__ import annotations
 
-import os
-import re
+import os, re
 from typing import Iterable
-
 from google import genai
 from google.genai import types
+from app.models.commands import AgentResult, DownloadIntent, DownloadIntentPatch
+from app.models.intent_patch import apply_intent_patch
 
-from app.models.commands import AgentResult, DownloadIntent
-
-
-SYSTEM_INSTRUCTION = """
-Kamu adalah parser perintah untuk aplikasi YouTube Bulk Downloader.
-Tugasmu HANYA mengubah bahasa manusia menjadi DownloadIntent yang terstruktur.
-
-Aturan:
-- Jangan pernah menghasilkan perintah shell, Python, PowerShell, CMD, atau kode.
-- Jangan mengarang URL. Jika tidak ada URL, biarkan null.
-- Jika pengguna menyebut playlist, source_type=playlist.
-- Jika pengguna menyebut channel/kanal/semua video channel, source_type=channel.
-- Jika pengguna menyebut satu video, source_type=video.
-- "musik saja", "audio saja", "mp3" => mode=audio.
-- "jangan shorts" => include_shorts=false.
-- "jangan live" => include_live=false.
-- "subtitle/sub" => include_subtitles=true.
-- "thumbnail" => include_thumbnail=true.
-- Jika pengguna meminta download, action=download.
-- Jika hanya meminta cek/lihat/analisis isi URL, action=analyze.
-- Gunakan Bahasa Indonesia singkat pada explanation.
-- Jangan melakukan aksi di luar schema.
-""".strip()
-
+SYSTEM_INSTRUCTION="""Kamu adalah parser intent untuk aplikasi Pengunduh YouTube Massal. Keluarkan HANYA patch field DownloadIntentPatch yang benar-benar diminta pengguna; jangan mengisi default untuk field yang tidak disebut. Jangan membuat shell/Python/PowerShell/CMD atau URL palsu. Perintah cek/analisis hanya action=analyze dan tidak boleh mengunduh. Jeda/lanjut/batal memakai action masing-masing. Gunakan Bahasa Indonesia singkat pada explanation. Pahami negasi: 'jangan unduh subtitle' berarti false, 'jangan download ulang' berarti use_archive=true (hindari unduh ulang), sedangkan 'download ulang' berarti use_archive=false. 'tambahkan subtitle Indonesia' hanya mengubah subtitle/language."""
 
 class GeminiLanguageAgent:
-    """Gemini hanya memahami intent; yt-dlp tetap menjadi executor lokal."""
-
-    def __init__(
-        self,
-        api_keys: Iterable[str] | None = None,
-        model: str | None = None,
-    ) -> None:
-        self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
-        self.api_keys = self._load_keys(api_keys)
-        self._cursor = 0
-
+    def __init__(self,api_keys:Iterable[str]|None=None,model:str|None=None)->None:
+        self.model=model or os.getenv("GEMINI_MODEL","gemini-3.8-flash"); self.api_keys=self._load_keys(api_keys); self._cursor=0
     @staticmethod
-    def _load_keys(api_keys: Iterable[str] | None) -> list[str]:
-        if api_keys is not None:
-            keys = list(api_keys)
-        else:
-            multi = os.getenv("GEMINI_API_KEYS", "")
-            single = os.getenv("GEMINI_API_KEY", "")
-            keys = [*multi.split(","), single]
-
-        clean: list[str] = []
-        for key in keys:
-            key = key.strip()
-            if key and key not in clean:
-                clean.append(key)
+    def _load_keys(api_keys):
+        values=list(api_keys) if api_keys is not None else [*os.getenv("GEMINI_API_KEYS","").split(","),os.getenv("GEMINI_API_KEY","")]; clean=[]
+        for value in values:
+            value=value.strip()
+            if value and value not in clean: clean.append(value)
         return clean[:100]
-
-    def interpret(self, text: str, current_url: str | None = None) -> AgentResult:
-        text = text.strip()
+    def interpret(self,text:str,current_url:str|None=None,current_intent:DownloadIntent|None=None)->AgentResult:
+        text=text.strip(); base=current_intent.model_copy(deep=True) if current_intent else DownloadIntent()
+        if current_url: base.url=current_url
         if not text:
-            return AgentResult(
-                intent=DownloadIntent(explanation="Perintah kosong."),
-                provider="local_fallback",
-            )
-
-        if not self.api_keys:
-            return AgentResult(
-                intent=self._local_fallback(text, current_url),
-                provider="local_fallback",
-            )
-
-        errors: list[Exception] = []
-        for _ in range(len(self.api_keys)):
-            key_index = self._cursor % len(self.api_keys)
-            api_key = self.api_keys[key_index]
-            self._cursor = (self._cursor + 1) % len(self.api_keys)
-
-            try:
-                client = genai.Client(api_key=api_key)
-                prompt = text
-                if current_url and current_url not in text:
-                    prompt += f"\nURL aktif di aplikasi: {current_url}"
-
-                response = client.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTION,
-                        response_mime_type="application/json",
-                        response_schema=DownloadIntent,
-                        temperature=0.1,
-                    ),
-                )
-                intent = DownloadIntent.model_validate_json(response.text)
-                if not intent.url and current_url:
-                    intent.url = current_url
-                return AgentResult(
-                    intent=intent,
-                    provider="gemini",
-                    key_index=key_index,
-                )
-            except Exception as exc:  # SDK exception types can vary by version.
-                errors.append(exc)
-                if not self._should_rotate(exc):
-                    break
-
-        intent = self._local_fallback(text, current_url)
-        if errors:
-            intent.explanation += " Gemini tidak tersedia, memakai parser lokal."
-        return AgentResult(intent=intent, provider="local_fallback")
-
+            patch=DownloadIntentPatch(action="unknown",explanation="Perintah kosong."); return AgentResult(intent=apply_intent_patch(base,patch),patch=patch,provider="local_fallback")
+        if self.api_keys:
+            for _ in range(len(self.api_keys)):
+                idx=self._cursor%len(self.api_keys); self._cursor=(self._cursor+1)%len(self.api_keys)
+                try:
+                    client=genai.Client(api_key=self.api_keys[idx]); context=f"\nURL aktif: {current_url}" if current_url and current_url not in text else ""
+                    response=client.models.generate_content(model=self.model,contents=text+context,config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION,response_mime_type="application/json",response_schema=DownloadIntentPatch,temperature=0.0))
+                    patch=DownloadIntentPatch.model_validate_json(response.text); return AgentResult(intent=apply_intent_patch(base,patch),patch=patch,provider="gemini",key_index=idx)
+                except Exception as exc:
+                    if not self._should_rotate(exc): break
+        patch=self._local_patch(text,current_url); return AgentResult(intent=apply_intent_patch(base,patch),patch=patch,provider="local_fallback")
     @staticmethod
-    def _should_rotate(exc: Exception) -> bool:
-        message = str(exc).lower()
-        rotate_markers = (
-            "429",
-            "quota",
-            "rate limit",
-            "resource_exhausted",
-            "resource exhausted",
-            "401",
-            "403",
-            "api key",
-        )
-        return any(marker in message for marker in rotate_markers)
-
+    def _should_rotate(exc:Exception)->bool:
+        msg=str(exc).lower(); return any(x in msg for x in ("429","quota","rate limit","resource_exhausted","401","403","api key"))
     @staticmethod
-    def _local_fallback(text: str, current_url: str | None) -> DownloadIntent:
-        lower = text.lower()
-        url_match = re.search(r"https?://\S+", text)
-        url = url_match.group(0).rstrip(".,);]") if url_match else current_url
-
-        if any(word in lower for word in ("playlist", "daftar putar")):
-            source_type = "playlist"
-        elif any(word in lower for word in ("channel", "kanal", "semua video")):
-            source_type = "channel"
-        elif url:
-            source_type = "auto"
-        else:
-            source_type = "auto"
-
-        action = "download"
-        if any(word in lower for word in ("cek", "analisis", "lihat isi", "tampilkan")):
-            action = "analyze"
-        elif "pause" in lower or "jeda" in lower:
-            action = "pause"
-        elif "lanjut" in lower or "resume" in lower:
-            action = "resume"
-        elif "batal" in lower or "cancel" in lower:
-            action = "cancel"
-
-        quality = "best"
-        for q in ("2160p", "1440p", "1080p", "720p", "480p", "360p"):
-            if q in lower:
-                quality = q
-                break
-
-        mode = "audio" if any(
-            word in lower for word in ("audio saja", "musik saja", "mp3", "m4a", "opus")
-        ) else "video"
-
-        audio_format = "best"
-        for fmt in ("mp3", "m4a", "opus"):
-            if fmt in lower:
-                audio_format = fmt
-                break
-
-        return DownloadIntent(
-            action=action,
-            source_type=source_type,
-            url=url,
-            mode=mode,
-            quality=quality,
-            audio_format=audio_format,
-            include_shorts=not any(
-                phrase in lower for phrase in ("jangan shorts", "tanpa shorts", "skip shorts")
-            ),
-            include_live=not any(
-                phrase in lower for phrase in ("jangan live", "tanpa live", "skip live")
-            ),
-            include_subtitles=any(
-                word in lower for word in ("subtitle", "subtitel", "srt", "sub ")
-            ),
-            include_thumbnail="thumbnail" in lower,
-            use_archive=not any(
-                phrase in lower for phrase in ("download ulang", "ulang semua")
-            ),
-            explanation="Perintah dipahami dengan parser lokal.",
-        )
+    def _local_patch(text:str,current_url:str|None=None)->DownloadIntentPatch:
+        lower=" ".join(text.lower().split()); data={"explanation":"Perintah dipahami dengan parser lokal."}; m=re.search(r"https?://\S+",text)
+        if m:data["url"]=m.group(0).rstrip(".,);]")
+        if any(x in lower for x in ("jeda","pause")):data["action"]="pause"
+        elif any(x in lower for x in ("lanjut","resume")):data["action"]="resume"
+        elif any(x in lower for x in ("batal","cancel")):data["action"]="cancel"
+        elif any(x in lower for x in ("cek","analisis","lihat isi","tampilkan daftar","berapa video")):data["action"]="analyze"
+        elif any(x in lower for x in ("unduh","download","ambil semua")):data["action"]="download"
+        else:data["action"]="unknown"
+        if any(x in lower for x in ("playlist","daftar putar")):data["source_type"]="playlist"
+        elif any(x in lower for x in ("channel","kanal","semua video")):data["source_type"]="channel"
+        elif any(x in lower for x in ("satu video","video ini")):data["source_type"]="video"
+        for q in ("2160p","1440p","1080p","720p","480p","360p"):
+            if q in lower:data["quality"]=q;break
+        if "kualitas terbaik" in lower or "resolusi terbaik" in lower:data["quality"]="best"
+        if any(x in lower for x in ("audio saja","musik saja","mp3 saja")):data["mode"]="audio"
+        for fmt in ("mp3","m4a","opus"):
+            if fmt in lower:data["audio_format"]=fmt;break
+        for fmt in ("mp4","mkv","webm"):
+            if fmt in lower:data["video_format"]=fmt;break
+        if any(x in lower for x in ("jangan shorts","tanpa shorts","skip shorts")):data["include_shorts"]=False
+        elif any(x in lower for x in ("sertakan shorts","ikutkan shorts","dengan shorts")):data["include_shorts"]=True
+        if any(x in lower for x in ("jangan live","tanpa live","skip live")):data["include_live"]=False
+        elif any(x in lower for x in ("sertakan live","ikutkan live","dengan live")):data["include_live"]=True
+        neg=any(x in lower for x in ("jangan unduh subtitle","jangan download subtitle","tanpa subtitle","tanpa subtitel","jangan subtitle")); pos=any(x in lower for x in ("subtitle","subtitel"," srt","tambahkan sub"))
+        if neg:data["include_subtitles"]=False
+        elif pos:
+            data["include_subtitles"]=True
+            if "indonesia" in lower or "bahasa id" in lower:data["subtitle_languages"]=["id","id.*","en","en.*"]
+        if any(x in lower for x in ("jangan thumbnail","tanpa thumbnail")):data["include_thumbnail"]=False
+        elif "thumbnail" in lower:data["include_thumbnail"]=True
+        if any(x in lower for x in ("jangan download ulang","jangan unduh ulang","hindari download ulang")):data["use_archive"]=True
+        elif any(x in lower for x in ("download ulang","unduh ulang","ulang semua")):data["use_archive"]=False
+        m=re.search(r"(?:paralel|bersamaan)\s*(\d+)",lower)
+        if m:data["concurrent_downloads"]=max(1,min(10,int(m.group(1))))
+        return DownloadIntentPatch.model_validate(data)
