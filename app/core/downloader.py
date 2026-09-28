@@ -56,14 +56,17 @@ class YouTubeDownloader:
             "fragment_retries": 10,
             "concurrent_fragment_downloads": intent.concurrent_downloads,
             "windowsfilenames": True,
-            "writemetadata": intent.include_metadata,
+            "writeinfojson": intent.include_metadata,
+            "addmetadata": intent.include_metadata,
             "writethumbnail": intent.include_thumbnail,
             "writesubtitles": intent.include_subtitles,
             "writeautomaticsub": intent.include_subtitles,
             "subtitleslangs": ["id", "en", "en.*"],
-            "merge_output_format": intent.video_format if intent.video_format != "best" else None,
             "match_filter": self._make_filter(intent),
         }
+
+        if intent.video_format != "best":
+            opts["merge_output_format"] = intent.video_format
 
         if intent.use_archive:
             opts["download_archive"] = str(output_dir / ".download-archive.txt")
