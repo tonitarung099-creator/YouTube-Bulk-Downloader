@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.controllers.app_controller import AppController
+from app.gui.delegates.video_delegates import StatusBadgeDelegate,ThumbnailDelegate
 from app.gui.models.video_table_model import VideoTableModel
 from app.gui.models.video_filter_proxy import VideoFilterProxyModel
 from app.gui.theme import STYLESHEET
@@ -41,8 +42,9 @@ class MainWindow(QMainWindow):
         listbar.addStretch(); listbar.addWidget(QLabel("Filter")); listbar.addWidget(self.filter); listbar.addWidget(self.search); lay.addLayout(listbar)
         self.model=VideoTableModel(); self.proxy=VideoFilterProxyModel(self); self.proxy.setSourceModel(self.model)
         self.table=QTableView(); self.table.setModel(self.proxy);self.header=CheckableHeader(Qt.Horizontal,self.table);self.table.setHorizontalHeader(self.header); self.table.setAlternatingRowColors(True); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); self.table.setSortingEnabled(True); self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(58); self.table.setMinimumHeight(328); self.table.setMaximumHeight(350)
+        self.thumbnail_delegate=ThumbnailDelegate(self.table);self.status_delegate=StatusBadgeDelegate(self.table);self.table.setItemDelegateForColumn(2,self.thumbnail_delegate);self.table.setItemDelegateForColumn(7,self.status_delegate)
         hdr=self.table.horizontalHeader(); hdr.setSectionResizeMode(3,QHeaderView.Stretch)
-        for c,w in {0:34,1:38,2:120,4:72,5:72,6:88,7:110,8:38}.items(): hdr.resizeSection(c,w)
+        for c,w in {0:34,1:38,2:133,4:72,5:72,6:88,7:118,8:38}.items(): hdr.resizeSection(c,w)
         lay.addWidget(self.table)
         self.settings=DownloadSettings(); lay.addWidget(self.settings)
         self.progress=ProgressPanel(); lay.addWidget(self.progress); lay.addStretch(1)
