@@ -1,6 +1,12 @@
 from __future__ import annotations
+
 from PySide6.QtCore import QAbstractTableModel,QModelIndex,Qt
 from app.models.state import VideoItem
+
+THUMBNAIL_ROLE=Qt.UserRole+1
+DURATION_ROLE=Qt.UserRole+2
+STATUS_ROLE=Qt.UserRole+3
+
 
 class VideoTableModel(QAbstractTableModel):
     headers=["","#","Thumbnail","Judul Video","Durasi","Jenis","Tanggal","Status","⋯"]
@@ -14,6 +20,9 @@ class VideoTableModel(QAbstractTableModel):
         item=self.items[index.row()];col=index.column()
         if role==Qt.CheckStateRole and col==0:return Qt.Checked if item.selected else Qt.Unchecked
         if role==Qt.ToolTipRole and col==3:return item.title
+        if role==THUMBNAIL_ROLE:return item.thumbnail
+        if role==DURATION_ROLE:return item.duration
+        if role==STATUS_ROLE:return str(item.status)
         if role!=Qt.DisplayRole:return None
         if col==1:return str(index.row()+1)
         if col==2:return ""
@@ -23,7 +32,7 @@ class VideoTableModel(QAbstractTableModel):
             m,s=divmod(int(item.duration),60);h,m=divmod(m,60);return f"{h}:{m:02}:{s:02}" if h else f"{m}:{s:02}"
         if col==5:return item.kind
         if col==6:return item.upload_date or "—"
-        if col==7:return {"ready":"Siap diunduh","queued":"Dalam antrean","downloading":"Mengunduh","postprocessing":"Menggabungkan","paused":"Dijeda","completed":"Selesai","failed":"Gagal","cancelled":"Dibatalkan","skipped":"Dilewati"}.get(str(item.status),str(item.status))
+        if col==7:return {"ready":"Siap diunduh","queued":"Dalam antrean","downloading":"Mengunduh","postprocessing":"Menggabungkan","pausing":"Menjeda","paused":"Dijeda","completed":"Selesai","failed":"Gagal","cancelled":"Dibatalkan","skipped":"Dilewati"}.get(str(item.status),str(item.status))
         if col==8:return "⋯"
     def flags(self,index):
         f=super().flags(index)
