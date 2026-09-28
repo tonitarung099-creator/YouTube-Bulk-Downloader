@@ -31,3 +31,8 @@ def test_video_parallel_not_fragment_parallel():
 def test_duplicate_is_skipped(monkeypatch):
     def slow(self,intent,progress_cb=None,pause_event=None,cancel_event=None):time.sleep(.15);return 0
     monkeypatch.setattr(qm.YouTubeDownloader,"download",slow);q=qm.QueueManager(max_workers=1);v=VideoItem(id="abc",title="A",url="https://youtu.be/abc");q.add(v,DownloadIntent(quality="1080p"));b=q.add(v,DownloadIntent(quality="1080p"));assert b.status==JobStatus.SKIPPED
+
+def test_portable_tools_are_wired_into_ytdlp(monkeypatch,tmp_path):
+    tools=tmp_path/"tools";tools.mkdir();ffmpeg=tools/"ffmpeg.exe";deno=tools/"deno.exe";ffmpeg.write_bytes(b"");deno.write_bytes(b"")
+    monkeypatch.setattr("app.core.downloader.bundled_tool_path",lambda name:{"ffmpeg":ffmpeg,"deno":deno}.get(name))
+    opts=YouTubeDownloader._portable_tool_options();assert opts["ffmpeg_location"]==str(tools);assert opts["js_runtimes"]["deno"]["path"]==str(deno)
