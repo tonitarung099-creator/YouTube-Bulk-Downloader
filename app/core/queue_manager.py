@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable
 
+from app.core.download_archive import DownloadArchive
 from app.core.downloader import DownloadCancelled, DownloadPaused, YouTubeDownloader
 from app.models.commands import DownloadIntent
 from app.models.state import DownloadJob, JobStatus, VideoItem
@@ -19,7 +20,7 @@ class _Control:
 
 
 class QueueManager:
-    """Antrean paralel video dengan kontrol jeda/lanjut/batal per pekerjaan."""
+    """Antrean paralel video dengan kontrol dan archive yang terkoordinasi."""
 
     ACTIVE = {JobStatus.QUEUED, JobStatus.DOWNLOADING, JobStatus.POSTPROCESSING, JobStatus.PAUSING}
 
@@ -31,9 +32,9 @@ class QueueManager:
         self._jobs: dict[str, DownloadJob] = {}
         self._controls: dict[str, _Control] = {}
         self._lock = threading.RLock()
+        self._archive = DownloadArchive()
 
     def set_max_workers(self, max_workers: int) -> bool:
-        """Terapkan limit baru segera bila antrean idle, atau setelah pekerjaan aktif selesai."""
         target = max(1, min(10, int(max_workers)))
         with self._lock:
             self._pending_max_workers = target
@@ -51,15 +52,28 @@ class QueueManager:
         old.shutdown(wait=False, cancel_futures=False)
         return True
 
+    @staticmethod
+    def _same_profile(job: DownloadJob, video: VideoItem, intent: DownloadIntent) -> bool:
+        return (
+            job.video.id == video.id
+            and job.intent.mode == intent.mode
+            and job.intent.quality == intent.quality
+            and job.intent.video_format == intent.video_format
+            and job.intent.audio_format == intent.audio_format
+        )
+
     def add(self, video: VideoItem, intent: DownloadIntent) -> DownloadJob:
         job = DownloadJob(job_id=uuid.uuid4().hex, video=video.model_copy(deep=True), intent=intent.model_copy(deep=True))
+        if self._archive.contains(video, intent):
+            job.status = JobStatus.SKIPPED
+            job.error = "Sudah pernah selesai dengan profil kualitas/format yang sama."
+            self._emit(job)
+            return job
         with self._lock:
             duplicate = any(
-                j.video.id == video.id
-                and j.intent.quality == intent.quality
-                and j.intent.mode == intent.mode
-                and j.status in {JobStatus.QUEUED, JobStatus.DOWNLOADING, JobStatus.POSTPROCESSING}
-                for j in self._jobs.values()
+                self._same_profile(existing, video, intent)
+                and existing.status in {JobStatus.QUEUED, JobStatus.DOWNLOADING, JobStatus.POSTPROCESSING}
+                for existing in self._jobs.values()
             )
             if duplicate:
                 job.status = JobStatus.SKIPPED
@@ -101,11 +115,13 @@ class QueueManager:
                 job.percent = min(100.0, job.downloaded_bytes * 100.0 / job.total_bytes)
             self._emit(job)
 
-        intent = job.intent.model_copy(update={"url": job.video.url})
+        # Queue manager mengelola archive sendiri supaya worker paralel tidak menulis file yang sama.
+        worker_intent = job.intent.model_copy(update={"url": job.video.url, "use_archive": False})
         try:
-            code = downloader.download(intent, progress, ctl.pause, ctl.cancel)
+            code = downloader.download(worker_intent, progress, ctl.pause, ctl.cancel)
             if code != 0:
                 raise RuntimeError(f"yt-dlp selesai dengan kode {code}")
+            self._archive.mark_completed(job.video, job.intent)
             job.status = JobStatus.COMPLETED
             job.percent = 100.0
         except DownloadPaused:
