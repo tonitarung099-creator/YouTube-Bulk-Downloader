@@ -23,6 +23,8 @@ jobs:
       - name: Tests
         run: python -m pytest -q
       - name: Capture reference-size UI
+        env:
+          QT_QPA_PLATFORM: windows
         run: python scripts/capture_ui.py
       - name: Build portable ZIP
         shell: pwsh
