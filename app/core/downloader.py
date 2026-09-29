@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 import yt_dlp
 
-from app.core.paths import bundled_tool_path
+from app.core.paths import bundled_tool_path, youtube_cookie_file
 from app.models.commands import DownloadIntent
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -161,6 +161,9 @@ class YouTubeDownloader:
         deno = bundled_tool_path("deno")
         if deno:
             opts["js_runtimes"] = {"deno": {"path": str(deno)}}
+        cookie_file = youtube_cookie_file()
+        if cookie_file:
+            opts["cookiefile"] = str(cookie_file)
         return opts
 
     @staticmethod
