@@ -8,7 +8,7 @@ Aplikasi Windows desktop untuk menganalisis dan mengunduh video, playlist, atau 
 - 1080p sebagai batas maksimum yang ketat, mode audio, subtitle/thumbnail/metadata, archive anti-duplikat.
 - Gemini sampai 100 API key dengan rotasi; tanpa key tetap ada parser lokal. Model default `gemini-3.8-flash` dapat diubah lewat `GEMINI_MODEL`.
 - CLI lama tetap tersedia: `python main.py "cek URL" --url <URL>`; tanpa argumen membuka GUI.
-- Build Windows `onedir` + ZIP portable dan FFmpeg/ffprobe melalui GitHub Actions.
+- Build Windows `onedir` + ZIP portable dengan FFmpeg, ffprobe, Deno, verifikasi isi ZIP, dan smoke-test EXE hasil ekstrak.
 
 ## Menjalankan dari source
 ```powershell
@@ -19,12 +19,26 @@ python main.py
 ```
 Salin `.env.example` ke `.env` bila memakai Gemini. Jangan commit API key.
 
+## Jika YouTube meminta verifikasi/cookie
+Pada sebagian jaringan atau IP, YouTube dapat menampilkan pesan seperti **"Sign in to confirm you're not a bot"**. Aplikasi mendukung cookie Netscape secara opsional untuk kasus tersebut.
+
+Cara paling sederhana pada versi portable:
+1. Extract ZIP aplikasi.
+2. Simpan file cookie dengan nama `youtube-cookies.txt` di folder `data` di sebelah EXE.
+3. Buka ulang aplikasi. Cookie otomatis dipakai saat **Analisis** maupun **Unduh**.
+
+Alternatif untuk source/developer: set environment variable `YOUTUBE_COOKIES_FILE` ke lokasi file cookie. Variabel ini memiliki prioritas lebih tinggi daripada `data/youtube-cookies.txt`.
+
+**Jangan commit, upload, atau membagikan file cookie.** Folder `data/` sudah diabaikan Git. Gunakan cookie hanya dari akun/perangkat milik Anda sendiri.
+
 ## Build portable Windows
 ```powershell
 pip install ".[gui,dev]"
 .\scripts\build_windows.ps1
 ```
 Hasil: `release/Pengunduh-YouTube-Massal-Windows-portable.zip`.
+
+Build utama memvalidasi struktur ZIP, runtime PyInstaller, FFmpeg/ffprobe/Deno, serta startup EXE. Tes jaringan YouTube dijalankan terpisah sebagai diagnostik non-blocking karena IP GitHub Actions dapat dibatasi YouTube walaupun aplikasi lokal sehat.
 
 ## Batasan
 Jeda menghentikan transfer melalui hook yt-dlp dan resume menjadwalkan ulang dengan `.part`; keberhasilan resume byte-perfect tetap bergantung server/protokol. Klasifikasi Shorts dari ekstraksi flat bisa belum diketahui sampai metadata video lengkap tersedia. Gunakan aplikasi hanya untuk konten yang memang berhak Anda unduh.
