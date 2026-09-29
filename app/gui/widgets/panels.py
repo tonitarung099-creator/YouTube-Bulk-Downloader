@@ -96,13 +96,15 @@ class SourceCard(QFrame):
 class DownloadSettings(QFrame):
     changed=Signal(dict)
     def __init__(self):
-        super().__init__();self.setObjectName("Panel");root=QVBoxLayout(self);root.setContentsMargins(14,10,14,12)
-        heading=QHBoxLayout();gear=QLabel();gear.setPixmap(make_icon("settings",18).pixmap(18,18));heading.addWidget(gear);title=QLabel("Pengaturan Unduhan");title.setObjectName("Heading");heading.addWidget(title);heading.addStretch();root.addLayout(heading)
+        super().__init__();self.setObjectName("Panel");self._last_video_quality="1080p";self._quality_buttons={}
+        root=QVBoxLayout(self);root.setContentsMargins(14,10,14,12)
+        heading=QHBoxLayout();gear=QLabel();gear.setPixmap(make_icon("settings",18).pixmap(18,18));heading.addWidget(gear);title=QLabel("Pengaturan Unduhan");title.setObjectName("Heading");heading.addWidget(title);heading.addStretch();self.mode_status=QLabel("Mode: Video • MP4");self.mode_status.setObjectName("Muted");heading.addWidget(self.mode_status);root.addLayout(heading)
         grid=QGridLayout();root.addLayout(grid);grid.addWidget(QLabel("Kualitas video"),0,0);qbox=QHBoxLayout();self.qgroup=QButtonGroup(self);self.qgroup.setExclusive(True)
         for q,label in (("best","Terbaik"),("1080p","1080p"),("720p","720p"),("audio","Audio saja")):
-            b=QPushButton(label);b.setCheckable(True);b.setProperty("value",q);self.qgroup.addButton(b);qbox.addWidget(b);b.clicked.connect(self._emit);b.setChecked(q=="1080p")
-        grid.addLayout(qbox,0,1);grid.addWidget(QLabel("Format video"),1,0);self.video=QComboBox();self.video.addItems(["MP4","MKV","WebM"]);self.video.currentTextChanged.connect(self._emit);grid.addWidget(self.video,1,1)
-        grid.addWidget(QLabel("Format audio"),2,0);self.audio=QComboBox();self.audio.addItems(["MP3","M4A","Opus","Terbaik"]);self.audio.currentTextChanged.connect(self._emit);grid.addWidget(self.audio,2,1)
+            b=QPushButton(label);b.setCheckable(True);b.setProperty("value",q);self.qgroup.addButton(b);self._quality_buttons[q]=b;qbox.addWidget(b);b.clicked.connect(lambda _checked=False,value=q:self._select_quality(value));b.setChecked(q=="1080p")
+        grid.addLayout(qbox,0,1)
+        grid.addWidget(QLabel("Format video"),1,0);self.video=QComboBox();self.video.addItems(["MP4","MKV","WebM"]);self.video.setToolTip("Memilih format ini mengaktifkan mode video.");self.video.activated.connect(self._select_video_format);grid.addWidget(self.video,1,1)
+        grid.addWidget(QLabel("Format audio"),2,0);self.audio=QComboBox();self.audio.addItems(["MP3","M4A","Opus","Terbaik"]);self.audio.setToolTip("Memilih format ini mengaktifkan mode audio.");self.audio.activated.connect(self._select_audio_format);grid.addWidget(self.audio,2,1)
         grid.addWidget(QLabel("Folder output"),3,0);path=QHBoxLayout();self.folder=QLineEdit();self.folder.editingFinished.connect(self._emit);choose=QPushButton("Pilih");choose.setIcon(make_icon("settings",16));choose.clicked.connect(self._choose);path.addWidget(self.folder,1);path.addWidget(choose);grid.addLayout(path,3,1)
         right=QGridLayout();self.parallel=QSpinBox();self.parallel.setRange(1,10);self.parallel.setValue(5);self.parallel.valueChanged.connect(self._emit);right.addWidget(QLabel("Unduhan paralel"),0,0);right.addWidget(self.parallel,0,1)
         self.archive=QCheckBox("Jangan unduh ulang");self.subtitle=QCheckBox("Unduh subtitle");self.thumb=QCheckBox("Unduh thumbnail");self.meta=QCheckBox("Simpan metadata");self.shorts=QCheckBox("Sertakan Shorts");self.live=QCheckBox("Sertakan Live")
@@ -112,13 +114,34 @@ class DownloadSettings(QFrame):
     def _choose(self):
         p=QFileDialog.getExistingDirectory(self,"Pilih folder output",self.folder.text() or str(Path.home()))
         if p:self.folder.setText(p);self._emit()
+    def _select_quality(self,value:str):
+        if value!="audio":self._last_video_quality=value
+        self._emit()
+    def _select_video_format(self,*_):
+        current=self.qgroup.checkedButton();value=current.property("value") if current else None
+        if value=="audio" or value is None:
+            button=self._quality_buttons.get(self._last_video_quality) or self._quality_buttons["1080p"]
+            button.setChecked(True)
+        self._emit()
+    def _select_audio_format(self,*_):
+        self._quality_buttons["audio"].setChecked(True);self._emit()
     def _emit(self,*_):
-        b=self.qgroup.checkedButton();q=b.property("value") if b else "1080p";mode="audio" if q=="audio" else "video";self.changed.emit({"mode":mode,"quality":"best" if q=="audio" else q,"video_format":self.video.currentText().lower(),"audio_format":"best" if self.audio.currentText()=="Terbaik" else self.audio.currentText().lower(),"output_folder":self.folder.text() or None,"concurrent_downloads":self.parallel.value(),"use_archive":self.archive.isChecked(),"include_subtitles":self.subtitle.isChecked(),"include_thumbnail":self.thumb.isChecked(),"include_metadata":self.meta.isChecked(),"include_shorts":self.shorts.isChecked(),"include_live":self.live.isChecked()})
+        b=self.qgroup.checkedButton();q=b.property("value") if b else self._last_video_quality;mode="audio" if q=="audio" else "video"
+        if mode=="video":self._last_video_quality=q
+        video_format=self.video.currentText().lower();audio_format="best" if self.audio.currentText()=="Terbaik" else self.audio.currentText().lower()
+        self.mode_status.setText(f"Mode: {'Audio' if mode=='audio' else 'Video'} • {self.audio.currentText() if mode=='audio' else self.video.currentText()}")
+        self.changed.emit({"mode":mode,"quality":"best" if mode=="audio" else q,"video_format":video_format,"audio_format":audio_format,"output_folder":self.folder.text() or None,"concurrent_downloads":self.parallel.value(),"use_archive":self.archive.isChecked(),"include_subtitles":self.subtitle.isChecked(),"include_thumbnail":self.thumb.isChecked(),"include_metadata":self.meta.isChecked(),"include_shorts":self.shorts.isChecked(),"include_live":self.live.isChecked()})
     def load_intent(self,i):
         controls=[self.folder,self.parallel,self.video,self.audio,self.archive,self.subtitle,self.thumb,self.meta,self.shorts,self.live,*self.qgroup.buttons()];previous=[w.blockSignals(True) for w in controls]
         try:
             self.folder.setText(i.output_folder or "");self.parallel.setValue(i.concurrent_downloads);self.archive.setChecked(i.use_archive);self.subtitle.setChecked(i.include_subtitles);self.thumb.setChecked(i.include_thumbnail);self.meta.setChecked(i.include_metadata);self.shorts.setChecked(i.include_shorts);self.live.setChecked(i.include_live);self.video.setCurrentText(i.video_format.upper() if i.video_format!="best" else "MP4");self.audio.setCurrentText({"mp3":"MP3","m4a":"M4A","opus":"Opus","best":"Terbaik"}.get(i.audio_format,"Terbaik"))
-            for b in self.qgroup.buttons():b.setChecked((i.mode=="audio" and b.property("value")=="audio") or (i.mode=="video" and b.property("value")==i.quality))
+            if i.mode=="audio":
+                selected="audio"
+            else:
+                selected=i.quality if i.quality in self._quality_buttons and i.quality!="audio" else "best"
+                self._last_video_quality=selected
+            self._quality_buttons[selected].setChecked(True)
+            self.mode_status.setText(f"Mode: {'Audio' if i.mode=='audio' else 'Video'} • {self.audio.currentText() if i.mode=='audio' else self.video.currentText()}")
         finally:
             for w,old in zip(controls,previous):w.blockSignals(old)
 
