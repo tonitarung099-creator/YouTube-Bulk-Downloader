@@ -48,6 +48,7 @@ def test_chat_question_uses_gemini_when_api_key_exists(monkeypatch) -> None:
     assert calls
     assert "system_instruction" in calls[0][2]
     assert "response_schema" not in calls[0][2]
+    assert "Konteks aplikasi" in calls[0][1]
 
 
 def test_search_and_download_command_builds_safe_local_plan() -> None:
@@ -56,8 +57,18 @@ def test_search_and_download_command_builds_safe_local_plan() -> None:
     assert result.kind == "action"
     assert result.intent.action == "search"
     assert result.intent.source_type == "search"
-    assert "iwan fals" in (result.intent.search_query or "")
+    assert result.intent.search_query == "lagu iwan fals"
     assert result.intent.search_limit == 100
+    assert result.intent.download_after_search is True
+    assert result.intent.mode == "audio"
+    assert result.intent.audio_format == "mp3"
+
+
+def test_named_download_without_url_becomes_search_then_download() -> None:
+    agent = GeminiLanguageAgent(api_keys=[])
+    result = agent.interpret("download semua lagu Iwan Fals sebagai mp3")
+    assert result.intent.action == "search"
+    assert result.intent.search_query == "lagu iwan fals"
     assert result.intent.download_after_search is True
     assert result.intent.mode == "audio"
     assert result.intent.audio_format == "mp3"
