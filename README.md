@@ -6,7 +6,8 @@ Aplikasi Windows desktop untuk menganalisis dan mengunduh video, playlist, atau 
 - UI tiga kolom mengikuti `docs/reference/youtube-bulk-downloader-id.png`: sidebar, workspace, Agen AI Gemini.
 - Video/playlist/channel, tabel seleksi, pencarian/filter, progres, antrean paralel video, jeda/lanjut/batal.
 - 1080p sebagai batas maksimum yang ketat, mode audio, subtitle/thumbnail/metadata, archive anti-duplikat.
-- Gemini sampai 100 API key dengan rotasi; tanpa key tetap ada parser lokal. Model default `gemini-3.8-flash` dapat diubah lewat `GEMINI_MODEL`.
+- Gemini sampai 100 API key dengan rotasi; tanpa key tetap ada parser lokal.
+- AI hanya memakai tiga model Flash Lite: `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` → `gemini-2.5-flash-lite`. Jika model utama gagal/tidak tersedia, agent turun ke model berikutnya. `GEMINI_MODEL` hanya boleh memilih salah satu dari tiga model tersebut.
 - CLI lama tetap tersedia: `python main.py "cek URL" --url <URL>`; tanpa argumen membuka GUI.
 - Build Windows `onedir` + ZIP portable dengan FFmpeg, ffprobe, QuickJS-NG, verifikasi isi ZIP, dan smoke-test EXE hasil ekstrak.
 
