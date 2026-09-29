@@ -129,6 +129,20 @@ class AppController(QObject):
         fut = self._pool.submit(self.source_service.analyze, target)
         fut.add_done_callback(lambda f: self._analysis_done.emit(seq, f))
 
+    def search_youtube(self, query: str, limit: int = 50, download_after: bool = False) -> None:
+        if self._closing:
+            return
+        clean = " ".join(str(query or "").split()).strip()
+        if not clean:
+            self.ai_reply.emit("Kata pencarian masih kosong.", None)
+            return
+        self._analysis_seq += 1
+        seq = self._analysis_seq
+        self._pending_ai_download = bool(download_after)
+        self.ai_status.emit(f"Mencari YouTube • {clean[:36]}")
+        fut = self._pool.submit(self.source_service.search, clean, max(1, min(200, int(limit))))
+        fut.add_done_callback(lambda f: self._analysis_done.emit(seq, f))
+
     def _finish_analysis(self, seq: int, fut: concurrent.futures.Future) -> None:
         if self._closing or seq != self._analysis_seq:
             return
@@ -137,16 +151,18 @@ class AppController(QObject):
         except Exception as exc:
             self._pending_ai_download = False
             self.analysis_failed.emit(str(exc))
+            self.ai_status.emit("Siap")
             return
         self.state.source = source
         self.state.active_url = source.url or self.state.active_url
         self.state.selected_ids = {i.id for i in source.items}
         self.source_loaded.emit(source)
         self.state_changed.emit(self.state)
+        self.ai_status.emit(f"Siap • {len(source.items)} hasil" if source.source_type == "search" else "Siap")
         if self._pending_ai_download:
             self._pending_ai_download = False
             accepted = self.queue_selected(all_items=False)
-            self.ai_reply.emit(f"Analisis selesai. {accepted} video dimasukkan ke antrean.", None)
+            self.ai_reply.emit(f"Pencarian/analisis selesai. {accepted} video dimasukkan ke antrean.", None)
 
     def queue_selected(self, all_items: bool = False) -> int:
         if self._closing or not self.state.source:
@@ -195,8 +211,22 @@ class AppController(QObject):
             result = fut.result()
         except Exception as exc:
             self.ai_status.emit("Gangguan")
-            self.ai_reply.emit(f"Gagal memahami perintah: {exc}", None)
+            self.ai_reply.emit(f"Gemini mengalami gangguan: {exc}", None)
             return
+
+        if result.kind == "chat":
+            if result.provider == "gemini":
+                self.ai_status.emit(f"Online • {self.agent.last_model or self.agent.model}")
+            elif self.agent.api_keys and self.agent.last_error:
+                self.ai_status.emit("Gemini gagal • Jawaban lokal")
+            else:
+                self.ai_status.emit("Mode lokal")
+            reply = result.reply_text or "Saya siap membantu."
+            if result.provider != "gemini" and self.agent.api_keys and self.agent.last_error:
+                reply += "\n\nGemini: " + self.agent._friendly_error()
+            self.ai_reply.emit(reply, result)
+            return
+
         self.state.intent = result.intent
         self.queue.set_max_workers(self.state.intent.concurrent_downloads)
         if result.intent.url:
@@ -217,8 +247,18 @@ class AppController(QObject):
             summary += "\nGemini: " + self.agent._friendly_error()
         self.ai_reply.emit(summary, result)
         self.state_changed.emit(self.state)
+
         if result.intent.action == "analyze" and result.intent.url:
             self.analyze(result.intent.url)
+        elif result.intent.action == "search":
+            if result.intent.search_query:
+                self.ai_reply.emit(
+                    f"Saya cari '{result.intent.search_query}' di YouTube" + (" lalu antrekan hasilnya." if result.intent.download_after_search else "."),
+                    result,
+                )
+                self.search_youtube(result.intent.search_query, result.intent.search_limit, result.intent.download_after_search)
+            else:
+                self.ai_reply.emit("Saya perlu kata pencarian. Contoh: carikan lagu Iwan Fals.", result)
         elif result.intent.action == "download":
             target = result.intent.url or self.state.active_url
             if self.state.source and target and self.state.source.url == target:
@@ -229,7 +269,7 @@ class AppController(QObject):
                 self.ai_reply.emit("Saya analisis URL dulu, lalu unduhan dimulai otomatis.", result)
                 self.analyze(target)
             else:
-                self.ai_reply.emit("Belum ada URL. Tempel URL YouTube terlebih dahulu.", result)
+                self.ai_reply.emit("Belum ada URL. Tempel URL YouTube atau minta saya mencari sesuatu terlebih dahulu.", result)
         elif result.intent.action == "pause":
             self.pause()
         elif result.intent.action == "resume":
