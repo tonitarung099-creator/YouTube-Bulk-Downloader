@@ -10,8 +10,8 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -33,11 +33,11 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: python scripts\e2e_youtube_test.py --tools-dir "dist\Pengunduh YouTube Massal\tools"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ui-baseline
           path: artifacts/*.png
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Pengunduh-YouTube-Massal-Windows-portable
           path: release/Pengunduh-YouTube-Massal-Windows-portable.zip
