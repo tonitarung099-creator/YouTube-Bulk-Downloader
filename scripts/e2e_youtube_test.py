@@ -9,7 +9,9 @@ import app.core.paths as app_paths
 from app.core.downloader import YouTubeDownloader
 from app.models.commands import DownloadIntent
 
-TEST_URL = "https://www.youtube.com/watch?v=BaW_jenozKc"
+# Fixture yang saat ini dipakai oleh suite extractor YouTube milik yt-dlp.
+TEST_URL = "https://www.youtube.com/watch?v=YE7VzlLtp-4&t=1s&end=9"
+EXPECTED_ID = "YE7VzlLtp-4"
 
 
 def main() -> int:
@@ -30,7 +32,7 @@ def main() -> int:
     try:
         downloader = YouTubeDownloader(workdir)
         source = downloader.analyze(TEST_URL)
-        if source.get("id") != "BaW_jenozKc":
+        if source.get("id") != EXPECTED_ID:
             raise RuntimeError(f"ID metadata tidak sesuai: {source.get('id')!r}")
         if source.get("type") != "video":
             raise RuntimeError(f"Jenis sumber bukan video: {source.get('type')!r}")
