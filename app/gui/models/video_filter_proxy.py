@@ -15,14 +15,16 @@ class VideoFilterProxyModel(QSortFilterProxyModel):
     def set_search(self, text: str) -> None:
         value = text.strip().casefold()
         if value != self._search:
+            self.beginFilterChange()
             self._search = value
-            self.invalidateFilter()
+            self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
 
     def set_kind(self, kind: str | None) -> None:
         value = kind.strip().casefold() if kind else None
         if value != self._kind:
+            self.beginFilterChange()
             self._kind = value
-            self.invalidateFilter()
+            self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
 
     def filterAcceptsRow(self, source_row: int, source_parent) -> bool:  # noqa: N802 - Qt API
         model = self.sourceModel()
