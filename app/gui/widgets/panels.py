@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtCore import Qt, Signal, QUrl
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QPixmap
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PySide6.QtWidgets import (
     QButtonGroup,QCheckBox,QComboBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QLabel,
     QLineEdit,QProgressBar,QPushButton,QSpinBox,QTextEdit,QVBoxLayout,QWidget,
@@ -64,15 +66,31 @@ class Sidebar(QWidget):
 class SourceCard(QFrame):
     open_channel=Signal()
     def __init__(self):
-        super().__init__();self.setObjectName("Panel");self.setMinimumHeight(118);layout=QHBoxLayout(self);layout.setContentsMargins(14,12,14,12)
-        self.avatar=QLabel("YT");self.avatar.setAlignment(Qt.AlignCenter);self.avatar.setFixedSize(58,58);self.avatar.setStyleSheet("background:#263744;border-radius:8px;font-weight:700");layout.addWidget(self.avatar)
+        super().__init__();self.setObjectName("Panel");self.setMinimumHeight(118);self._avatar_url="";self._net=QNetworkAccessManager(self);self._net.finished.connect(self._avatar_finished)
+        layout=QHBoxLayout(self);layout.setContentsMargins(14,12,14,12)
+        self.avatar=QLabel("YT");self.avatar.setAlignment(Qt.AlignCenter);self.avatar.setFixedSize(72,72);self.avatar.setStyleSheet("background:#263744;border-radius:8px;font-weight:700");layout.addWidget(self.avatar)
         text=QVBoxLayout();self.kind=QLabel("Jenis  —");self.kind.setObjectName("Muted");self.title=QLabel("Masukkan URL untuk memulai");self.title.setObjectName("Heading");self.desc=QLabel("Analisis metadata tidak akan mengunduh video.");self.desc.setObjectName("Muted");self.desc.setWordWrap(True);text.addWidget(self.kind);text.addWidget(self.title);text.addWidget(self.desc);layout.addLayout(text,1)
         stats=QGridLayout();self.total=QLabel("—");self.playlists=QLabel("—");self.shorts=QLabel("—")
         for row,(label,value) in enumerate((("Total video",self.total),("Playlist",self.playlists),("Shorts",self.shorts))):
             muted=QLabel(label);muted.setObjectName("Muted");stats.addWidget(muted,row,0);stats.addWidget(value,row,1)
-        layout.addLayout(stats);button=QPushButton("Lihat Channel");button.clicked.connect(self.open_channel.emit);layout.addWidget(button)
+        layout.addLayout(stats);button=QPushButton("Lihat Channel");button.setIcon(make_icon("channel",15));button.clicked.connect(self.open_channel.emit);layout.addWidget(button)
+    def _set_avatar(self,url:str|None):
+        self._avatar_url=str(url or "");self.avatar.setPixmap(QPixmap());self.avatar.setText("YT")
+        if not self._avatar_url:return
+        local=Path(self._avatar_url)
+        if local.is_file():
+            self._apply_avatar(QPixmap(str(local)));return
+        reply=self._net.get(QNetworkRequest(QUrl(self._avatar_url)));reply.setProperty("avatar_url",self._avatar_url)
+    def _avatar_finished(self,reply):
+        url=str(reply.property("avatar_url") or "")
+        if url==self._avatar_url and reply.error()==reply.NetworkError.NoError:
+            pix=QPixmap();pix.loadFromData(reply.readAll());self._apply_avatar(pix)
+        reply.deleteLater()
+    def _apply_avatar(self,pix:QPixmap):
+        if pix.isNull():return
+        self.avatar.setText("");self.avatar.setPixmap(pix.scaled(self.avatar.size(),Qt.KeepAspectRatioByExpanding,Qt.SmoothTransformation))
     def set_source(self,s):
-        self.kind.setText(f"Jenis  {str(s.source_type).capitalize()}");self.title.setText(s.title);self.desc.setText((s.description or "Tidak ada deskripsi.")[:220]);self.total.setText("—" if s.total_detected is None else str(s.total_detected));self.playlists.setText("—" if s.playlist_count is None else str(s.playlist_count));self.shorts.setText("—" if s.shorts_count is None else str(s.shorts_count))
+        self.kind.setText(f"Jenis  {str(s.source_type).capitalize()}");self.title.setText(s.title);self.desc.setText((s.description or "Tidak ada deskripsi.")[:220]);self.total.setText("—" if s.total_detected is None else str(s.total_detected));self.playlists.setText("—" if s.playlist_count is None else str(s.playlist_count));self.shorts.setText("—" if s.shorts_count is None else str(s.shorts_count));self._set_avatar(s.thumbnail)
 
 
 class DownloadSettings(QFrame):
@@ -108,7 +126,11 @@ class DownloadSettings(QFrame):
 class ProgressPanel(QFrame):
     pause_clicked=Signal();resume_clicked=Signal();cancel_clicked=Signal()
     def __init__(self):
-        super().__init__();self.setObjectName("Panel");layout=QVBoxLayout(self);top=QHBoxLayout();download_icon=QLabel();download_icon.setPixmap(make_icon("download",17,"#FF4962").pixmap(17,17));top.addWidget(download_icon);self.title=QLabel("Belum ada unduhan aktif");self.percent=QLabel("0%");top.addWidget(self.title,1);top.addWidget(self.percent);layout.addLayout(top);self.bar=QProgressBar();self.bar.setTextVisible(False);layout.addWidget(self.bar);bottom=QHBoxLayout();self.detail=QLabel("Siap");self.detail.setObjectName("Muted");bottom.addWidget(self.detail,1);self.pause=QPushButton("Jeda");self.resume=QPushButton("Lanjutkan");self.cancel=QPushButton("Batalkan");self.pause.clicked.connect(self.pause_clicked);self.resume.clicked.connect(self.resume_clicked);self.cancel.clicked.connect(self.cancel_clicked);bottom.addWidget(self.pause);bottom.addWidget(self.resume);bottom.addWidget(self.cancel);layout.addLayout(bottom)
+        super().__init__();self.setObjectName("Panel");layout=QVBoxLayout(self);layout.setContentsMargins(14,10,14,10);layout.setSpacing(6)
+        head=QHBoxLayout();download_icon=QLabel();download_icon.setPixmap(make_icon("download",17,"#FF4962").pixmap(17,17));head.addWidget(download_icon);heading=QLabel("Proses Unduhan");heading.setStyleSheet("font-weight:600");head.addWidget(heading);head.addStretch();self.summary=QLabel("0 sedang diunduh\n0 dalam antrean");self.summary.setObjectName("Muted");self.summary.setAlignment(Qt.AlignRight|Qt.AlignVCenter);head.addWidget(self.summary);layout.addLayout(head)
+        top=QHBoxLayout();self.title=QLabel("Belum ada unduhan aktif");self.percent=QLabel("0%");top.addWidget(self.title,1);top.addWidget(self.percent);layout.addLayout(top);self.bar=QProgressBar();self.bar.setTextVisible(False);layout.addWidget(self.bar)
+        bottom=QHBoxLayout();self.detail=QLabel("Siap");self.detail.setObjectName("Muted");bottom.addWidget(self.detail,1);self.pause=QPushButton("Jeda");self.resume=QPushButton("Lanjutkan");self.cancel=QPushButton("Batalkan");self.pause.clicked.connect(self.pause_clicked);self.resume.clicked.connect(self.resume_clicked);self.cancel.clicked.connect(self.cancel_clicked);bottom.addWidget(self.pause);bottom.addWidget(self.resume);bottom.addWidget(self.cancel);layout.addLayout(bottom)
+    def set_summary(self,active:int,queued:int):self.summary.setText(f"{active} sedang diunduh\n{queued} dalam antrean")
     def set_job(self,j):
         self.title.setText(j.video.title);p=int(j.percent or 0);self.bar.setValue(p);self.percent.setText(f"{p}%" if j.percent is not None else "—");speed=f" • {human_bytes(j.speed)}/s" if j.speed else "";eta=f" • Sisa {int(j.eta)} dtk" if j.eta is not None else "";self.detail.setText(f"{str(j.status).replace('_',' ').title()}  {human_bytes(j.downloaded_bytes)} / {human_bytes(j.total_bytes)}{speed}{eta}");self.pause.setEnabled(str(j.status) in {"queued","downloading"});self.resume.setEnabled(str(j.status)=="paused");self.cancel.setEnabled(str(j.status) not in {"completed","cancelled"})
 
@@ -116,10 +138,14 @@ class ProgressPanel(QFrame):
 class GeminiPanel(QWidget):
     send=Signal(str)
     def __init__(self):
-        super().__init__();self.setObjectName("GeminiPanel");layout=QVBoxLayout(self);head=QHBoxLayout();spark=QLabel();spark.setPixmap(make_icon("sparkle",19).pixmap(19,19));name=QLabel("Agen AI Gemini");name.setObjectName("Heading");self.status=QLabel("Belum dikonfigurasi");self.status.setObjectName("Muted");head.addWidget(spark);head.addWidget(name);head.addStretch();head.addWidget(self.status);layout.addLayout(head);description=QLabel("Pahami perintah bahasa manusia, lalu engine lokal yang bekerja.");description.setWordWrap(True);description.setObjectName("Muted");layout.addWidget(description);self.chat=QTextEdit();self.chat.setReadOnly(True);layout.addWidget(self.chat,1);row=QHBoxLayout();self.input=CommandTextEdit();self.input.setFixedHeight(46);self.input.setPlaceholderText("Ketik perintah…");self.input.submit_requested.connect(self._send);button=QPushButton("Kirim");button.setObjectName("Primary");button.setFixedHeight(46);button.clicked.connect(self._send);row.addWidget(self.input,1);row.addWidget(button);layout.addLayout(row)
+        super().__init__();self.setObjectName("GeminiPanel");layout=QVBoxLayout(self);head=QHBoxLayout();spark=QLabel();spark.setPixmap(make_icon("sparkle",19).pixmap(19,19));name=QLabel("Agen AI Gemini");name.setObjectName("Heading");self.status=QLabel("Belum dikonfigurasi");self.status.setObjectName("Muted");head.addWidget(spark);head.addWidget(name);head.addStretch();head.addWidget(self.status);layout.addLayout(head);description=QLabel("Pahami perintah bahasa manusia, lalu engine lokal yang bekerja.");description.setWordWrap(True);description.setObjectName("Muted");layout.addWidget(description);self.chat=QTextEdit();self.chat.setReadOnly(True);self.chat.setObjectName("GeminiChat");layout.addWidget(self.chat,1);row=QHBoxLayout();self.input=CommandTextEdit();self.input.setFixedHeight(46);self.input.setPlaceholderText("Ketik perintah…");self.input.submit_requested.connect(self._send);button=QPushButton("Kirim");button.setObjectName("Primary");button.setFixedHeight(46);button.clicked.connect(self._send);row.addWidget(self.input,1);row.addWidget(button);layout.addLayout(row)
     def _send(self):
         text=self.input.toPlainText().strip()
         if not text:return
         self.add_user(text);self.input.clear();self.send.emit(text)
-    def add_user(self,text):self.chat.append(f"<p align='right'><b>Anda</b><br>{text}</p>")
-    def add_ai(self,text):self.chat.append(f"<p><span style='color:{COLORS['cyan']}'><b>Gemini</b></span><br>{text.replace(chr(10),'<br>')}</p>")
+    def _append_bubble(self,text:str,user:bool):
+        safe=html.escape(text).replace("\n","<br>");align="right" if user else "left";bg="#1C2C38" if user else "#14232D";name="Anda" if user else "Gemini";name_color="#F3F5F7" if user else COLORS["cyan"]
+        self.chat.append(f"<table width='100%' cellspacing='0' cellpadding='0'><tr><td align='{align}'><table width='92%' bgcolor='{bg}' cellspacing='0' cellpadding='8'><tr><td><span style='color:{name_color};font-weight:600'>{name}</span><br>{safe}</td></tr></table></td></tr></table><br>")
+        bar=self.chat.verticalScrollBar();bar.setValue(bar.maximum())
+    def add_user(self,text):self._append_bubble(text,True)
+    def add_ai(self,text):self._append_bubble(text,False)
