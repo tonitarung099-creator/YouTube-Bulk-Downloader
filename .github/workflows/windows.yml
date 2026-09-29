@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 jobs:
   test-build:
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 30
     env:
       QT_QPA_PLATFORM: offscreen
