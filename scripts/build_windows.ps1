@@ -46,14 +46,17 @@ $probe = Get-ChildItem $ffDir -Recurse -Filter ffprobe.exe | Select-Object -Firs
 if (-not $bin -or -not $probe) { throw "FFmpeg/ffprobe tidak ditemukan di arsip build." }
 Copy-Item $bin.FullName (Join-Path $tools "ffmpeg.exe"); Copy-Item $probe.FullName (Join-Path $tools "ffprobe.exe")
 
-# Deno sebagai JS runtime yt-dlp untuk dukungan YouTube modern.
-$denoZip = Join-Path $env:TEMP "deno-windows.zip"; $denoDir = Join-Path $env:TEMP "deno-windows"
-Invoke-WebRequest "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip" -OutFile $denoZip
-Remove-Item $denoDir -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force -Path $denoDir | Out-Null
-Expand-Archive $denoZip $denoDir -Force
-$deno = Get-ChildItem $denoDir -Recurse -Filter deno.exe | Select-Object -First 1
-if (-not $deno) { throw "deno.exe tidak ditemukan di arsip build." }
-Copy-Item $deno.FullName (Join-Path $tools "deno.exe")
+# QuickJS-NG sebagai JS runtime yt-dlp. Jauh lebih kecil daripada Deno, tetapi tetap didukung resmi EJS.
+# Versi + checksum dipin agar build reproducible dan binary pihak ketiga tidak berubah diam-diam.
+$quickJsVersion = "0.17.0"
+$quickJsSha256 = "2aeabf0092c3262d6b2609824418f7dd7ed1f1df939f73b2b15645230cac0d77"
+$qjsPath = Join-Path $tools "qjs.exe"
+$qjsUrl = "https://github.com/quickjs-ng/quickjs/releases/download/v$quickJsVersion/qjs-windows-x86_64.exe"
+Invoke-WebRequest $qjsUrl -OutFile $qjsPath
+$qjsHash = (Get-FileHash $qjsPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($qjsHash -ne $quickJsSha256) {
+    throw "Checksum QuickJS-NG tidak cocok. Diharapkan $quickJsSha256, didapat $qjsHash."
+}
 
 # Folder writable portable tetap hadir setelah extract.
 $downloadsDir = Join-Path $appDir "downloads"; $dataDir = Join-Path $appDir "data"
@@ -62,8 +65,8 @@ Set-Content -Encoding UTF8 (Join-Path $downloadsDir ".keep") "Folder hasil unduh
 Set-Content -Encoding UTF8 (Join-Path $dataDir ".keep") "Folder data aplikasi portable."
 
 Copy-Item README.md (Join-Path $appDir "README.md") -Force
-$denoVersion = (& (Join-Path $tools "deno.exe") --version | Select-Object -First 1)
-$manifest = @{ app="Pengunduh YouTube Massal"; version="0.2.0"; python=(python --version); built=(Get-Date).ToUniversalTime().ToString("o"); ffmpeg="bundled essentials"; deno=$denoVersion; yt_dlp=(python -c "import yt_dlp; print(yt_dlp.version.__version__)") } | ConvertTo-Json
+$qjsRuntimeVersion = (& $qjsPath --version | Select-Object -First 1)
+$manifest = @{ app="Pengunduh YouTube Massal"; version="0.2.0"; python=(python --version); built=(Get-Date).ToUniversalTime().ToString("o"); ffmpeg="bundled essentials"; quickjs=$qjsRuntimeVersion; yt_dlp=(python -c "import yt_dlp; print(yt_dlp.version.__version__)") } | ConvertTo-Json
 Set-Content -Encoding UTF8 (Join-Path $appDir "VERSIONS.json") $manifest
 
 Compress-Archive -Path "$appDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
@@ -78,7 +81,7 @@ $required = @(
     "_internal",
     "tools\ffmpeg.exe",
     "tools\ffprobe.exe",
-    "tools\deno.exe",
+    "tools\qjs.exe",
     "downloads\.keep",
     "data\.keep",
     "README.md",
@@ -87,6 +90,9 @@ $required = @(
 foreach ($relative in $required) {
     $target = Join-Path $verifyDir $relative
     if (-not (Test-Path $target)) { throw "Portable ZIP tidak lengkap: '$relative' tidak ditemukan." }
+}
+if (Test-Path (Join-Path $verifyDir "tools\deno.exe")) {
+    throw "Portable masih mengandung Deno; regresi ukuran terdeteksi."
 }
 $exeSize = (Get-Item (Join-Path $verifyDir "Pengunduh YouTube Massal.exe")).Length
 $runtimeFiles = @(Get-ChildItem (Join-Path $verifyDir "_internal") -Recurse -File).Count
@@ -111,8 +117,8 @@ $verifiedTools = Join-Path $verifyDir "tools"
 if ($LASTEXITCODE -ne 0) { throw "ffmpeg.exe bundled gagal dijalankan." }
 & (Join-Path $verifiedTools "ffprobe.exe") -version | Select-Object -First 1 | Write-Host
 if ($LASTEXITCODE -ne 0) { throw "ffprobe.exe bundled gagal dijalankan." }
-& (Join-Path $verifiedTools "deno.exe") --version | Select-Object -First 1 | Write-Host
-if ($LASTEXITCODE -ne 0) { throw "deno.exe bundled gagal dijalankan." }
+& (Join-Path $verifiedTools "qjs.exe") --version | Select-Object -First 1 | Write-Host
+if ($LASTEXITCODE -ne 0) { throw "qjs.exe bundled gagal dijalankan." }
 
 # Smoke-test EXE hasil ZIP: aplikasi GUI harus berhasil start dan tetap hidup beberapa detik.
 $verifiedExe = Join-Path $verifyDir "Pengunduh YouTube Massal.exe"
@@ -123,5 +129,5 @@ if ($smoke.HasExited) { throw "EXE portable keluar terlalu cepat saat smoke test
 Stop-Process -Id $smoke.Id -Force
 $smoke.WaitForExit()
 
-Write-Host "Portable tervalidasi: EXE=$exeSize byte, runtime files=$runtimeFiles, test dependencies=absent, GUI smoke test=OK"
+Write-Host "Portable tervalidasi: EXE=$exeSize byte, runtime files=$runtimeFiles, QuickJS=$qjsRuntimeVersion, Deno=absent, test dependencies=absent, GUI smoke test=OK"
 Write-Host "Portable ZIP: $zipPath"
