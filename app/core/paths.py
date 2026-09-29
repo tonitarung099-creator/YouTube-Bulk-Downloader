@@ -36,6 +36,23 @@ def data_dir() -> Path:
     return target
 
 
+def youtube_cookie_file() -> Path | None:
+    """Cari cookie Netscape opsional tanpa pernah menyimpan/menyalinnya ke source code."""
+    configured = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
+    candidates: list[Path] = []
+    if configured:
+        candidates.append(Path(configured).expanduser())
+    candidates.append(data_dir() / "youtube-cookies.txt")
+
+    for candidate in candidates:
+        try:
+            if candidate.is_file() and candidate.stat().st_size > 0:
+                return candidate.resolve()
+        except OSError:
+            continue
+    return None
+
+
 def default_download_dir() -> Path:
     p = app_root() / "downloads"
     p.mkdir(parents=True, exist_ok=True)
