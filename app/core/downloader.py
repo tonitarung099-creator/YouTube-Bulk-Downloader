@@ -21,8 +21,33 @@ class DownloadCancelled(Exception):
     pass
 
 
+class _YtDlpMessageCollector:
+    """Tangkap warning/error yt-dlp agar UI bisa memberi pesan yang lebih berguna."""
+
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def debug(self, message: str) -> None:
+        return None
+
+    def warning(self, message: str) -> None:
+        self.messages.append(str(message))
+
+    def error(self, message: str) -> None:
+        self.messages.append(str(message))
+
+    def text(self) -> str:
+        return "\n".join(self.messages)
+
+
 class YouTubeDownloader:
     """Executor lokal; tidak pernah menjalankan shell dari output AI."""
+
+    _ANTI_BOT_MESSAGE = (
+        "YouTube meminta verifikasi anti-bot. Tambahkan atau perbarui cookie YouTube dengan menaruh "
+        "file Netscape bernama 'youtube-cookies.txt' di folder data aplikasi: data\\youtube-cookies.txt. "
+        "Lalu coba Analisis/Unduh lagi. Jangan bagikan file cookie tersebut kepada orang lain."
+    )
 
     def __init__(self, base_output: str | Path = "downloads") -> None:
         self.base_output = Path(base_output)
@@ -38,12 +63,21 @@ class YouTubeDownloader:
 
     def analyze(self, url: str) -> dict[str, Any]:
         self.validate_youtube_url(url)
-        opts = {"quiet": True, "skip_download": True, "extract_flat": "in_playlist", "ignoreerrors": True}
+        messages = _YtDlpMessageCollector()
+        opts = {
+            "quiet": True,
+            "skip_download": True,
+            "extract_flat": "in_playlist",
+            "ignoreerrors": True,
+            "logger": messages,
+        }
         opts.update(self._portable_tool_options())
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
         if not info:
-            raise RuntimeError("Metadata tidak ditemukan.")
+            if self._is_youtube_verification_error(messages.text()):
+                raise RuntimeError(self._ANTI_BOT_MESSAGE)
+            raise RuntimeError("Metadata tidak ditemukan. Pastikan URL masih tersedia dan dapat diakses.")
         entries = [e for e in (info.get("entries") or []) if isinstance(e, dict) and e.get("id")]
         source_type = self._source_type(info, url)
         normalized = [self._normalize_entry(e, source_type) for e in entries]
@@ -149,8 +183,13 @@ class YouTubeDownloader:
             raise ValueError("URL belum tersedia.")
         self.validate_youtube_url(intent.url)
         opts = self.build_options(intent, progress_cb, pause_event, cancel_event)
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            return ydl.download([intent.url])
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.download([intent.url])
+        except yt_dlp.utils.DownloadError as exc:
+            if self._is_youtube_verification_error(str(exc)):
+                raise RuntimeError(self._ANTI_BOT_MESSAGE) from exc
+            raise
 
     @staticmethod
     def _portable_tool_options() -> dict[str, Any]:
@@ -165,6 +204,16 @@ class YouTubeDownloader:
         if cookie_file:
             opts["cookiefile"] = str(cookie_file)
         return opts
+
+    @staticmethod
+    def _is_youtube_verification_error(message: str) -> bool:
+        text = str(message).casefold().replace("’", "'")
+        markers = (
+            "confirm you're not a bot",
+            "use --cookies-from-browser or --cookies",
+            "sign in to confirm",
+        )
+        return any(marker in text for marker in markers)
 
     @staticmethod
     def _video_format(quality: str) -> str:
