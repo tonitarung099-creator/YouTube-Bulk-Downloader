@@ -111,5 +111,9 @@ if ($smoke.HasExited) { throw "EXE portable keluar terlalu cepat saat smoke test
 Stop-Process -Id $smoke.Id -Force
 $smoke.WaitForExit()
 
-Write-Host "Portable tervalidasi: EXE=$exeSize byte, runtime files=$runtimeFiles, GUI smoke test=OK"
+# Uji end-to-end nyata: metadata YouTube -> download <=360p -> FFmpeg/Deno portable -> file media.
+python scripts\e2e_youtube_test.py --tools-dir $verifiedTools
+if ($LASTEXITCODE -ne 0) { throw "Uji end-to-end YouTube gagal dengan kode $LASTEXITCODE." }
+
+Write-Host "Portable tervalidasi: EXE=$exeSize byte, runtime files=$runtimeFiles, GUI smoke test=OK, YouTube E2E=OK"
 Write-Host "Portable ZIP: $zipPath"
