@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
-Action = Literal["analyze", "download", "pause", "resume", "cancel", "open_folder", "unknown"]
-SourceType = Literal["auto", "video", "playlist", "channel"]
+Action = Literal["analyze", "search", "download", "pause", "resume", "cancel", "open_folder", "unknown"]
+SourceType = Literal["auto", "video", "playlist", "channel", "search"]
 Quality = Literal["best", "2160p", "1440p", "1080p", "720p", "480p", "360p"]
 
 
@@ -13,6 +13,8 @@ class DownloadIntent(BaseModel):
     action: Action = "unknown"
     source_type: SourceType = "auto"
     url: Optional[str] = None
+    search_query: Optional[str] = None
+    search_limit: int = Field(default=50, ge=1, le=200)
     mode: Literal["video", "audio"] = "video"
     quality: Quality = "best"
     video_format: Literal["mp4", "mkv", "webm", "best"] = "mp4"
@@ -35,6 +37,8 @@ class DownloadIntentPatch(BaseModel):
     action: Optional[Action] = None
     source_type: Optional[SourceType] = None
     url: Optional[str] = None
+    search_query: Optional[str] = None
+    search_limit: Optional[int] = Field(default=None, ge=1, le=200)
     mode: Optional[Literal["video", "audio"]] = None
     quality: Optional[Quality] = None
     video_format: Optional[Literal["mp4", "mkv", "webm", "best"]] = None
