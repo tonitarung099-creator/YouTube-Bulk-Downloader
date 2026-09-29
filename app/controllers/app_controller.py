@@ -11,7 +11,7 @@ from app.core.queue_manager import QueueManager
 from app.core.source_service import SourceService
 from app.core.storage import JsonStorage
 from app.models.commands import DownloadIntent
-from app.models.state import AppState, DownloadJob
+from app.models.state import AppState, DownloadJob, JobStatus
 
 
 class AppController(QObject):
@@ -89,9 +89,12 @@ class AppController(QObject):
             return 0
         items = self.state.source.items if all_items else [i for i in self.state.source.items if i.id in self.state.selected_ids]
         eligible = [i for i in items if (self.state.intent.include_shorts or i.is_short is not True) and (self.state.intent.include_live or not i.is_live)]
+        accepted = 0
         for item in eligible:
-            self.queue.add(item, self.state.intent)
-        return len(eligible)
+            job = self.queue.add(item, self.state.intent)
+            if job.status != JobStatus.SKIPPED:
+                accepted += 1
+        return accepted
 
     def pause(self) -> None:
         self.queue.pause()
