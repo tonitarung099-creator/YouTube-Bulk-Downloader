@@ -5,23 +5,34 @@ Set-Location $root
 $distDir = Join-Path $root "dist"
 $buildDir = Join-Path $root "build"
 $releaseDir = Join-Path $root "release"
-$appDir = Join-Path $distDir "Pengunduh YouTube Massal"
-$appExe = Join-Path $appDir "Pengunduh YouTube Massal.exe"
-$runtimeDir = Join-Path $appDir "_internal"
 $zipPath = Join-Path $releaseDir "Pengunduh-YouTube-Massal-Windows-portable.zip"
 
-Remove-Item $buildDir,$distDir,$releaseDir -Recurse -Force -ErrorAction SilentlyContinue
+# Bersihkan semua lokasi build yang mungkin dipakai PyInstaller agar pencarian kandidat tidak pernah mengambil hasil lama.
+$legacyBuild = Join-Path $root "packaging\build"
+$legacyDist = Join-Path $root "packaging\dist"
+Remove-Item $buildDir,$distDir,$releaseDir,$legacyBuild,$legacyDist -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $distDir,$buildDir,$releaseDir | Out-Null
 
-# Paksa lokasi output agar script tidak pernah menambahkan tools ke folder dist yang salah.
 python -m PyInstaller --noconfirm --clean --distpath $distDir --workpath $buildDir packaging\youtube_bulk_downloader.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller gagal dengan kode $LASTEXITCODE." }
 
-if (-not (Test-Path $appExe -PathType Leaf)) {
-    $candidates = Get-ChildItem $root -Recurse -Filter "Pengunduh YouTube Massal.exe" -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
-    throw "EXE hasil PyInstaller tidak ditemukan di '$appExe'. Kandidat: $($candidates -join '; ')"
+# Jangan berasumsi lokasi folder hasil. Cari EXE yang baru saja dibuat lalu jadikan foldernya root portable.
+$exeCandidates = @(Get-ChildItem $root -Recurse -Filter "Pengunduh YouTube Massal.exe" -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch "\\release\\" } |
+    Sort-Object LastWriteTimeUtc -Descending)
+if ($exeCandidates.Count -eq 0) {
+    $tree = @(Get-ChildItem $root -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+    throw "EXE hasil PyInstaller tidak ditemukan. Pohon build: $($tree -join '; ')"
 }
-if (-not (Test-Path $runtimeDir -PathType Container)) { throw "Runtime PyInstaller _internal tidak ditemukan di '$runtimeDir'." }
+$appExe = $exeCandidates[0].FullName
+$appDir = $exeCandidates[0].Directory.FullName
+$runtimeDir = Join-Path $appDir "_internal"
+Write-Host "PyInstaller app root: $appDir"
+Write-Host "PyInstaller exe: $appExe"
+if (-not (Test-Path $runtimeDir -PathType Container)) {
+    $children = @(Get-ChildItem $appDir -Force -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+    throw "Runtime _internal tidak ditemukan di '$appDir'. Isi: $($children -join ', ')"
+}
 
 $tools = Join-Path $appDir "tools"
 New-Item -ItemType Directory -Force -Path $tools | Out-Null
@@ -44,13 +55,13 @@ $deno = Get-ChildItem $denoDir -Recurse -Filter deno.exe | Select-Object -First 
 if (-not $deno) { throw "deno.exe tidak ditemukan di arsip build." }
 Copy-Item $deno.FullName (Join-Path $tools "deno.exe")
 
-# Folder writable portable tetap hadir setelah extract (Compress-Archive mengabaikan folder kosong).
+# Folder writable portable tetap hadir setelah extract.
 $downloadsDir = Join-Path $appDir "downloads"; $dataDir = Join-Path $appDir "data"
 New-Item -ItemType Directory -Force -Path $downloadsDir,$dataDir | Out-Null
 Set-Content -Encoding UTF8 (Join-Path $downloadsDir ".keep") "Folder hasil unduhan portable."
 Set-Content -Encoding UTF8 (Join-Path $dataDir ".keep") "Folder data aplikasi portable."
 
-Copy-Item README.md (Join-Path $appDir "README.md")
+Copy-Item README.md (Join-Path $appDir "README.md") -Force
 $denoVersion = (& (Join-Path $tools "deno.exe") --version | Select-Object -First 1)
 $manifest = @{ app="Pengunduh YouTube Massal"; version="0.2.0"; python=(python --version); built=(Get-Date).ToUniversalTime().ToString("o"); ffmpeg="bundled essentials"; deno=$denoVersion; yt_dlp=(python -c "import yt_dlp; print(yt_dlp.version.__version__)") } | ConvertTo-Json
 Set-Content -Encoding UTF8 (Join-Path $appDir "VERSIONS.json") $manifest
@@ -58,7 +69,7 @@ Set-Content -Encoding UTF8 (Join-Path $appDir "VERSIONS.json") $manifest
 Compress-Archive -Path "$appDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
 if (-not (Test-Path $zipPath -PathType Leaf)) { throw "ZIP portable gagal dibuat." }
 
-# Verifikasi hasil yang benar-benar diterima pengguna, bukan hanya folder build sebelum kompresi.
+# Verifikasi arsip final yang benar-benar diterima pengguna.
 $verifyDir = Join-Path $env:TEMP "youtube-bulk-portable-verify"
 Remove-Item $verifyDir -Recurse -Force -ErrorAction SilentlyContinue
 Expand-Archive $zipPath $verifyDir -Force
