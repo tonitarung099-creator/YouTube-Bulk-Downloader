@@ -1,0 +1,14 @@
+name: CI Smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Runner started
+        run: echo "GitHub Actions runner started successfully"
