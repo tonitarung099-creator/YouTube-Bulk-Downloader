@@ -31,6 +31,11 @@ w.ai.status.setText("Online");w.ai.add_user("Unduh semua video dari channel ini 
 job=DownloadJob(job_id="fixture-job",video=items[1],intent=w.controller.state.intent,status=JobStatus.DOWNLOADING,percent=66,downloaded_bytes=452*1024*1024,total_bytes=658*1024*1024,speed=8.4*1024*1024,eta=122);w.progress.set_job(job);w.progress.set_summary(3,12)
 w.show();app.processEvents()
 
+# Pada ukuran referensi, kontrol progress utama harus terlihat tanpa scroll vertikal.
+button_bottom=w.progress.cancel.mapTo(w.home.viewport(),w.progress.cancel.rect().bottomLeft()).y()
+if button_bottom>w.home.viewport().height()-2:
+    raise SystemExit(f"Panel proses terpotong: tombol bawah y={button_bottom}, viewport={w.home.viewport().height()}")
+
 baseline_path=out_dir/"ui-baseline.png";w.grab().save(str(baseline_path))
 reference_path=Path("docs/reference/youtube-bulk-downloader-id.png");reference=QImage(str(reference_path));baseline=QImage(str(baseline_path))
 if reference.isNull() or baseline.isNull():raise SystemExit("Gagal membaca gambar referensi atau screenshot baseline.")
