@@ -54,7 +54,7 @@ class MainWindow(QMainWindow):
         w=QWidget();w.setObjectName("Workspace");lay=QVBoxLayout(w); lay.setContentsMargins(22,22,22,22); title=QLabel(name); title.setObjectName("Heading"); lay.addWidget(title)
         box=QTextEdit(); box.setReadOnly(True); box.setObjectName(f"{name}Text"); lay.addWidget(box,1)
         if name=="Pengaturan":
-            box.setHtml("<b>Gemini</b><br>API key dibaca dari GEMINI_API_KEYS / GEMINI_API_KEY dan tidak disimpan di repository.<br><br><b>Model</b><br>gemini-3.8-flash (dapat dioverride lewat GEMINI_MODEL).<br><br><b>Portable</b><br>Konfigurasi non-rahasia tersimpan di folder data aplikasi.")
+            box.setHtml("<b>Gemini</b><br>API key dibaca dari GEMINI_API_KEYS / GEMINI_API_KEY dan tidak disimpan di repository.<br><br><b>Model Flash Lite</b><br>1. gemini-3.5-flash-lite<br>2. gemini-3.1-flash-lite<br>3. gemini-2.5-flash-lite<br><br>Jika model utama gagal/tidak tersedia, AI otomatis memakai model berikutnya. GEMINI_MODEL hanya menerima salah satu dari tiga model tersebut.<br><br><b>Portable</b><br>Konfigurasi non-rahasia tersimpan di folder data aplikasi.")
         else: box.setPlainText("Belum ada data.")
         return w
 
