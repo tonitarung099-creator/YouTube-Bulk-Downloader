@@ -10,9 +10,9 @@ from google.genai import types
 from app.models.commands import AgentResult, DownloadIntent, DownloadIntentPatch
 from app.models.intent_patch import apply_intent_patch
 
-ACTION_SYSTEM_INSTRUCTION = """Kamu adalah agent aksi untuk aplikasi Pengunduh YouTube Massal. Keluarkan HANYA patch field DownloadIntentPatch yang benar-benar diminta pengguna; jangan mengisi default untuk field yang tidak disebut. Jangan membuat shell/Python/PowerShell/CMD atau URL palsu. Perintah cek/analisis URL memakai action=analyze. Jeda/lanjut/batal memakai action masing-masing. Jika pengguna meminta cari/carikan/temukan sesuatu di YouTube tanpa URL, gunakan action=search, source_type=search, dan isi search_query dengan kata pencarian yang ringkas. Jika pengguna juga meminta hasil pencarian langsung diunduh, set download_after_search=true. Untuk kata 'semua' pada pencarian, gunakan search_limit=100 kecuali pengguna menyebut angka lain; batas maksimum 200. Gunakan Bahasa Indonesia singkat pada explanation. Pahami negasi: 'jangan unduh subtitle' berarti false, 'jangan download ulang' berarti use_archive=true (hindari unduh ulang), sedangkan 'download ulang' berarti use_archive=false. 'tambahkan subtitle Indonesia' hanya mengubah subtitle/language."""
+ACTION_SYSTEM_INSTRUCTION = """Kamu adalah agent aksi untuk aplikasi Pengunduh YouTube Massal. Keluarkan HANYA patch field DownloadIntentPatch yang benar-benar diminta pengguna; jangan mengisi default untuk field yang tidak disebut. Jangan membuat shell/Python/PowerShell/CMD atau URL palsu. Perintah cek/analisis URL memakai action=analyze. Jeda/lanjut/batal memakai action masing-masing. Jika pengguna meminta cari/carikan/temukan sesuatu di YouTube tanpa URL, gunakan action=search, source_type=search, dan isi search_query dengan kata pencarian yang ringkas. Jika pengguna meminta mengunduh konten bernama (misalnya lagu/artis/video tertentu) tetapi tidak memberi URL dan tidak ada URL aktif yang relevan, gunakan action=search dan download_after_search=true. Jika pengguna juga meminta hasil pencarian langsung diunduh, set download_after_search=true. Untuk kata 'semua' pada pencarian, gunakan search_limit=100 kecuali pengguna menyebut angka lain; batas maksimum 200. Gunakan Bahasa Indonesia singkat pada explanation. Pahami negasi: 'jangan unduh subtitle' berarti false, 'jangan download ulang' berarti use_archive=true (hindari unduh ulang), sedangkan 'download ulang' berarti use_archive=false. 'tambahkan subtitle Indonesia' hanya mengubah subtitle/language."""
 
-CHAT_SYSTEM_INSTRUCTION = """Kamu adalah asisten Gemini di dalam aplikasi Pengunduh YouTube Massal. Jawab pertanyaan pengguna secara natural dalam Bahasa Indonesia. Kamu boleh menjawab pertanyaan umum, menjelaskan fitur aplikasi, memberi saran format/kualitas unduhan, dan membantu pengguna merumuskan perintah. Jangan mengaku sudah menjalankan aksi aplikasi dari mode chat. Aksi aplikasi yang benar-benar didukung adalah: analisis URL YouTube, mencari video di YouTube, mengunduh hasil/video/playlist/channel, memilih video atau audio, memilih MP4/MKV/WebM atau MP3/M4A/Opus, mengatur kualitas, subtitle, thumbnail, metadata, Shorts/Live, jumlah unduhan paralel, jeda, lanjut, dan batal. Jika ditanya 'kamu bisa melakukan apa saja?', jelaskan kemampuan chat + kemampuan aksi tersebut dengan ringkas dan jelas."""
+CHAT_SYSTEM_INSTRUCTION = """Kamu adalah asisten Gemini di dalam aplikasi Pengunduh YouTube Massal. Jawab pertanyaan pengguna secara natural dalam Bahasa Indonesia. Kamu boleh menjawab pertanyaan umum, menjelaskan fitur aplikasi, memberi saran format/kualitas unduhan, dan membantu pengguna merumuskan perintah. Gunakan konteks aplikasi yang diberikan bila relevan. Jangan mengaku sudah menjalankan aksi aplikasi dari mode chat. Aksi aplikasi yang benar-benar didukung adalah: analisis URL YouTube, mencari video di YouTube, mengunduh hasil/video/playlist/channel, memilih video atau audio, memilih MP4/MKV/WebM atau MP3/M4A/Opus, mengatur kualitas, subtitle, thumbnail, metadata, Shorts/Live, jumlah unduhan paralel, jeda, lanjut, dan batal. Jika ditanya 'kamu bisa melakukan apa saja?', jelaskan kemampuan chat + kemampuan aksi tersebut dengan ringkas dan jelas."""
 
 GEMINI_MODELS = (
     "gemini-3.5-flash-lite",
@@ -154,7 +154,12 @@ class GeminiLanguageAgent:
             history_lines: list[str] = []
             for role, message in self._chat_history[-8:]:
                 history_lines.append(f"{role}: {message}")
-            prompt = ""
+            context = (
+                "Konteks aplikasi saat ini: "
+                f"mode={base.mode}, kualitas={base.quality}, format_video={base.video_format}, "
+                f"format_audio={base.audio_format}, URL_aktif={base.url or 'tidak ada'}."
+            )
+            prompt = context + "\n\n"
             if history_lines:
                 prompt += "Percakapan sebelumnya:\n" + "\n".join(history_lines) + "\n\n"
             prompt += "Pengguna: " + text
@@ -230,23 +235,36 @@ class GeminiLanguageAgent:
         m = re.search(r"https?://\S+", text)
         if m:
             data["url"] = m.group(0).rstrip(".,);]")
+        search_words = any(x in lower for x in ("carikan", "cari ", "temukan"))
+        download_words = any(x in lower for x in ("unduh", "download", "ambil semua"))
+        named_download = (
+            download_words
+            and not m
+            and not current_url
+            and any(x in lower for x in ("lagu ", "musik ", "video ", "album ", "podcast ", "tutorial "))
+        )
         if any(x in lower for x in ("jeda", "pause")):
             data["action"] = "pause"
         elif any(x in lower for x in ("lanjut", "resume")):
             data["action"] = "resume"
         elif any(x in lower for x in ("batal", "cancel")):
             data["action"] = "cancel"
-        elif any(x in lower for x in ("carikan", "cari ", "temukan")) and not m:
+        elif (search_words and not m) or named_download:
             data["action"] = "search"
             data["source_type"] = "search"
             query = re.sub(r"\b(carikan|cari|temukan|tolong|semua|download|unduh|ambil|sebagai|format|mp3|mp4|m4a|opus|mkv|webm)\b", " ", lower)
             query = " ".join(query.split()).strip(" ,.-")
+            query = query.removesuffix(" dan").strip()
             data["search_query"] = query or lower
-            data["search_limit"] = 100 if "semua" in lower else 50
-            data["download_after_search"] = any(x in lower for x in ("unduh", "download", "ambil semua"))
+            requested_limit = re.search(r"\b(\d{1,3})\s*(?:hasil|video|lagu)?\b", lower)
+            if requested_limit:
+                data["search_limit"] = max(1, min(200, int(requested_limit.group(1))))
+            else:
+                data["search_limit"] = 100 if "semua" in lower else 50
+            data["download_after_search"] = download_words
         elif any(x in lower for x in ("cek", "analisis", "lihat isi", "tampilkan daftar", "berapa video")):
             data["action"] = "analyze"
-        elif any(x in lower for x in ("unduh", "download", "ambil semua")):
+        elif download_words:
             data["action"] = "download"
         else:
             data["action"] = "unknown"
