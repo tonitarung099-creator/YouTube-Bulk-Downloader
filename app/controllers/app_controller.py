@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import concurrent.futures, os
+import concurrent.futures
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 
 from app.ai.gemini_agent import GeminiLanguageAgent
 from app.core.paths import default_download_dir
@@ -22,8 +22,18 @@ class AppController(QObject):
     ai_reply = Signal(str, object)
     ai_status = Signal(str)
 
+    # Callback Future/queue berjalan dari thread worker. Semua perubahan state Qt
+    # dimarshalkan melalui queued signal agar hanya terjadi di thread controller/UI.
+    _analysis_done = Signal(int, object)
+    _ai_done = Signal(object)
+    _job_arrived = Signal(object)
+
     def __init__(self) -> None:
         super().__init__()
+        self._analysis_done.connect(self._finish_analysis, Qt.ConnectionType.QueuedConnection)
+        self._ai_done.connect(self._finish_ai, Qt.ConnectionType.QueuedConnection)
+        self._job_arrived.connect(self._apply_job, Qt.ConnectionType.QueuedConnection)
+
         self.storage = JsonStorage()
         saved = self.storage.load()
         self.state = AppState()
@@ -37,7 +47,7 @@ class AppController(QObject):
         self.source_service = SourceService()
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="ui-work")
         self._analysis_seq = 0
-        self.queue = QueueManager(self.state.intent.concurrent_downloads, self._on_job)
+        self.queue = QueueManager(self.state.intent.concurrent_downloads, self._job_arrived.emit)
         self.agent = GeminiLanguageAgent(model=saved.get("gemini_model") or None)
 
     def persist(self) -> None:
@@ -59,9 +69,9 @@ class AppController(QObject):
         self.state.active_url = url.strip()
         self.state_changed.emit(self.state)
         fut = self._pool.submit(self.source_service.analyze, self.state.active_url)
-        fut.add_done_callback(lambda f: self._finish_analysis(seq, f))
+        fut.add_done_callback(lambda f: self._analysis_done.emit(seq, f))
 
-    def _finish_analysis(self, seq, fut) -> None:
+    def _finish_analysis(self, seq: int, fut: concurrent.futures.Future) -> None:
         if seq != self._analysis_seq:
             return
         try:
@@ -92,7 +102,7 @@ class AppController(QObject):
     def cancel(self) -> None:
         self.queue.cancel()
 
-    def _on_job(self, job: DownloadJob) -> None:
+    def _apply_job(self, job: DownloadJob) -> None:
         by_id = {j.job_id: j for j in self.state.jobs}
         by_id[job.job_id] = job
         self.state.jobs = list(by_id.values())
@@ -102,9 +112,9 @@ class AppController(QObject):
     def interpret_ai(self, text: str) -> None:
         self.ai_status.emit("Menghubungkan" if self.agent.api_keys else "Mode lokal")
         fut = self._pool.submit(self.agent.interpret, text, self.state.active_url, self.state.intent)
-        fut.add_done_callback(self._finish_ai)
+        fut.add_done_callback(self._ai_done.emit)
 
-    def _finish_ai(self, fut) -> None:
+    def _finish_ai(self, fut: concurrent.futures.Future) -> None:
         try:
             result = fut.result()
         except Exception as exc:
