@@ -5,7 +5,6 @@ datas=[]; binaries=[]; hiddenimports=[]
 for pkg in ("yt_dlp", "yt_dlp_ejs", "google.genai"):
     d,b,h=collect_all(pkg); datas+=d; binaries+=b; hiddenimports+=h
 
-datas += [("app/assets/icons", "app/assets/icons")]
 a=Analysis(["main.py"], pathex=["."], binaries=binaries, datas=datas, hiddenimports=hiddenimports,
            noarchive=False)
 pyz=PYZ(a.pure)
