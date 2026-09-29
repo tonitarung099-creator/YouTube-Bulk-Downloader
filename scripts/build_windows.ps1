@@ -93,6 +93,18 @@ $runtimeFiles = @(Get-ChildItem (Join-Path $verifyDir "_internal") -Recurse -Fil
 if ($exeSize -lt 100000) { throw "EXE portable terlalu kecil/tidak valid: $exeSize byte." }
 if ($runtimeFiles -lt 10) { throw "Runtime portable tampak tidak lengkap: hanya $runtimeFiles file." }
 
+# Test suite dependency tidak boleh ikut release. Ini mencegah regresi ukuran portable.
+$forbiddenRuntime = @(
+    "_internal\google\genai\tests",
+    "_internal\pytest",
+    "_internal\_pytest"
+)
+foreach ($relative in $forbiddenRuntime) {
+    if (Test-Path (Join-Path $verifyDir $relative)) {
+        throw "Portable mengandung dependency test yang tidak diperlukan: '$relative'."
+    }
+}
+
 # Jalankan tool yang dibundel dari hasil ekstrak, bukan dari PATH runner.
 $verifiedTools = Join-Path $verifyDir "tools"
 & (Join-Path $verifiedTools "ffmpeg.exe") -version | Select-Object -First 1 | Write-Host
@@ -111,5 +123,5 @@ if ($smoke.HasExited) { throw "EXE portable keluar terlalu cepat saat smoke test
 Stop-Process -Id $smoke.Id -Force
 $smoke.WaitForExit()
 
-Write-Host "Portable tervalidasi: EXE=$exeSize byte, runtime files=$runtimeFiles, GUI smoke test=OK"
+Write-Host "Portable tervalidasi: EXE=$exeSize byte, runtime files=$runtimeFiles, test dependencies=absent, GUI smoke test=OK"
 Write-Host "Portable ZIP: $zipPath"
