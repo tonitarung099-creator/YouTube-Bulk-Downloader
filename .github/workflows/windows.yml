@@ -29,6 +29,10 @@ jobs:
       - name: Build portable ZIP
         shell: pwsh
         run: .\scripts\build_windows.ps1
+      - name: YouTube network diagnostic (non-blocking)
+        continue-on-error: true
+        shell: pwsh
+        run: python scripts\e2e_youtube_test.py --tools-dir "dist\Pengunduh YouTube Massal\tools"
       - uses: actions/upload-artifact@v4
         with:
           name: ui-baseline
