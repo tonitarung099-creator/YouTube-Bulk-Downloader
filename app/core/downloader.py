@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 import yt_dlp
 
@@ -95,6 +95,41 @@ class YouTubeDownloader:
             "entries": normalized,
         }
 
+    def search(self, query: str, limit: int = 50) -> dict[str, Any]:
+        clean = " ".join(str(query or "").split()).strip()
+        if not clean:
+            raise ValueError("Kata pencarian masih kosong.")
+        limit = max(1, min(200, int(limit)))
+        messages = _YtDlpMessageCollector()
+        opts = {
+            "quiet": True,
+            "skip_download": True,
+            "extract_flat": True,
+            "ignoreerrors": True,
+            "logger": messages,
+        }
+        opts.update(self._portable_tool_options())
+        target = f"ytsearch{limit}:{clean}"
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(target, download=False)
+        if not info:
+            if self._is_youtube_verification_error(messages.text()):
+                raise RuntimeError(self._ANTI_BOT_MESSAGE)
+            raise RuntimeError(f"Tidak menemukan hasil YouTube untuk: {clean}")
+        entries = [e for e in (info.get("entries") or []) if isinstance(e, dict) and e.get("id")]
+        normalized = [self._normalize_entry(e, "search") for e in entries]
+        return {
+            "id": None,
+            "title": f"Hasil pencarian: {clean}",
+            "description": f"{len(normalized)} hasil YouTube ditemukan untuk '{clean}'.",
+            "webpage_url": f"https://www.youtube.com/results?search_query={quote_plus(clean)}",
+            "channel_url": None,
+            "thumbnail": normalized[0].get("thumbnail") if normalized else None,
+            "type": "search",
+            "entry_count": len(normalized),
+            "entries": normalized,
+        }
+
     @staticmethod
     def _source_type(info: dict[str, Any], url: str) -> str:
         kind = str(info.get("_type") or "").lower()
@@ -109,6 +144,8 @@ class YouTubeDownloader:
     def _normalize_entry(e: dict[str, Any], parent_type: str) -> dict[str, Any]:
         vid = str(e.get("id") or "")
         url = e.get("webpage_url") or e.get("url") or (f"https://www.youtube.com/watch?v={vid}" if vid else "")
+        if url and not str(url).startswith(("http://", "https://")) and vid:
+            url = f"https://www.youtube.com/watch?v={vid}"
         live_status = e.get("live_status")
         is_live = bool(e.get("is_live") or live_status in {"is_live", "is_upcoming", "post_live"})
         entry_type = str(e.get("_type") or "video")
@@ -198,8 +235,6 @@ class YouTubeDownloader:
         if ffmpeg:
             opts["ffmpeg_location"] = str(ffmpeg.parent)
 
-        # QuickJS-NG jauh lebih kecil daripada Deno dan didukung resmi yt-dlp EJS.
-        # Tetap terima Deno sebagai fallback agar folder portable lama/source tetap kompatibel.
         quickjs = bundled_tool_path("qjs")
         deno = bundled_tool_path("deno")
         if quickjs:
