@@ -58,3 +58,5 @@ class AgentResult(BaseModel):
     provider: Literal["gemini", "local_fallback"]
     key_index: Optional[int] = None
     patch: Optional[DownloadIntentPatch] = None
+    kind: Literal["action", "chat"] = "action"
+    reply_text: Optional[str] = None
