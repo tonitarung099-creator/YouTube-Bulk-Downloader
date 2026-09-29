@@ -20,7 +20,7 @@ def main() -> int:
     args = parser.parse_args()
 
     tools_dir = args.tools_dir.resolve()
-    required_tools = [tools_dir / "ffmpeg.exe", tools_dir / "ffprobe.exe", tools_dir / "deno.exe"]
+    required_tools = [tools_dir / "ffmpeg.exe", tools_dir / "ffprobe.exe", tools_dir / "qjs.exe"]
     missing = [str(p) for p in required_tools if not p.is_file()]
     if missing:
         raise RuntimeError(f"Tool portable tidak lengkap untuk E2E: {missing}")
