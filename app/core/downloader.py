@@ -197,9 +197,16 @@ class YouTubeDownloader:
         ffmpeg = bundled_tool_path("ffmpeg")
         if ffmpeg:
             opts["ffmpeg_location"] = str(ffmpeg.parent)
+
+        # QuickJS-NG jauh lebih kecil daripada Deno dan didukung resmi yt-dlp EJS.
+        # Tetap terima Deno sebagai fallback agar folder portable lama/source tetap kompatibel.
+        quickjs = bundled_tool_path("qjs")
         deno = bundled_tool_path("deno")
-        if deno:
+        if quickjs:
+            opts["js_runtimes"] = {"quickjs": {"path": str(quickjs)}}
+        elif deno:
             opts["js_runtimes"] = {"deno": {"path": str(deno)}}
+
         cookie_file = youtube_cookie_file()
         if cookie_file:
             opts["cookiefile"] = str(cookie_file)
