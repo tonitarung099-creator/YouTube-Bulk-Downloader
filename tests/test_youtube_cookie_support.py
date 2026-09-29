@@ -31,18 +31,18 @@ def test_youtube_cookie_file_env_override_wins(monkeypatch, tmp_path: Path) -> N
     assert paths.youtube_cookie_file() == override.resolve()
 
 
-def test_portable_tool_options_include_cookie_and_bundled_tools(monkeypatch, tmp_path: Path) -> None:
+def test_portable_tool_options_include_cookie_quickjs_and_bundled_ffmpeg(monkeypatch, tmp_path: Path) -> None:
     tools = tmp_path / "tools"
     tools.mkdir()
     ffmpeg = tools / "ffmpeg.exe"
-    deno = tools / "deno.exe"
+    qjs = tools / "qjs.exe"
     ffmpeg.write_bytes(b"ffmpeg")
-    deno.write_bytes(b"deno")
+    qjs.write_bytes(b"quickjs")
     cookie = tmp_path / "youtube-cookies.txt"
     cookie.write_text("cookie", encoding="utf-8")
 
     def fake_tool(name: str):
-        return {"ffmpeg": ffmpeg, "deno": deno}.get(name)
+        return {"ffmpeg": ffmpeg, "qjs": qjs}.get(name)
 
     monkeypatch.setattr(downloader_module, "bundled_tool_path", fake_tool)
     monkeypatch.setattr(downloader_module, "youtube_cookie_file", lambda: cookie)
@@ -50,8 +50,25 @@ def test_portable_tool_options_include_cookie_and_bundled_tools(monkeypatch, tmp
     opts = YouTubeDownloader._portable_tool_options()
 
     assert opts["ffmpeg_location"] == str(tools)
-    assert opts["js_runtimes"]["deno"]["path"] == str(deno)
+    assert opts["js_runtimes"]["quickjs"]["path"] == str(qjs)
     assert opts["cookiefile"] == str(cookie)
+
+
+def test_portable_tool_options_falls_back_to_deno(monkeypatch, tmp_path: Path) -> None:
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    deno = tools / "deno.exe"
+    deno.write_bytes(b"deno")
+
+    def fake_tool(name: str):
+        return {"deno": deno}.get(name)
+
+    monkeypatch.setattr(downloader_module, "bundled_tool_path", fake_tool)
+    monkeypatch.setattr(downloader_module, "youtube_cookie_file", lambda: None)
+
+    opts = YouTubeDownloader._portable_tool_options()
+
+    assert opts["js_runtimes"]["deno"]["path"] == str(deno)
 
 
 def test_analyze_turns_youtube_antibot_into_actionable_message(monkeypatch) -> None:
