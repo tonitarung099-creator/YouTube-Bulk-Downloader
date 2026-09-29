@@ -15,6 +15,7 @@ class DownloadIntent(BaseModel):
     url: Optional[str] = None
     search_query: Optional[str] = None
     search_limit: int = Field(default=50, ge=1, le=200)
+    download_after_search: bool = False
     mode: Literal["video", "audio"] = "video"
     quality: Quality = "best"
     video_format: Literal["mp4", "mkv", "webm", "best"] = "mp4"
@@ -39,6 +40,7 @@ class DownloadIntentPatch(BaseModel):
     url: Optional[str] = None
     search_query: Optional[str] = None
     search_limit: Optional[int] = Field(default=None, ge=1, le=200)
+    download_after_search: Optional[bool] = None
     mode: Optional[Literal["video", "audio"]] = None
     quality: Optional[Quality] = None
     video_format: Optional[Literal["mp4", "mkv", "webm", "best"]] = None
