@@ -47,16 +47,21 @@ class AppController(QObject):
         self.source_service = SourceService()
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="ui-work")
         self._analysis_seq = 0
+        self._closing = False
         self.queue = QueueManager(self.state.intent.concurrent_downloads, self._job_arrived.emit)
         self.agent = GeminiLanguageAgent(model=saved.get("gemini_model") or None)
 
     def persist(self) -> None:
+        if self._closing:
+            return
         self.storage.save({
             "intent": self.state.intent.model_dump(mode="json"),
             "gemini_model": self.agent.model,
         })
 
     def update_intent(self, **changes) -> None:
+        if self._closing:
+            return
         self.state.intent = self.state.intent.model_copy(update=changes)
         if "concurrent_downloads" in changes:
             self.queue.set_max_workers(self.state.intent.concurrent_downloads)
@@ -64,6 +69,8 @@ class AppController(QObject):
         self.state_changed.emit(self.state)
 
     def analyze(self, url: str) -> None:
+        if self._closing:
+            return
         self._analysis_seq += 1
         seq = self._analysis_seq
         self.state.active_url = url.strip()
@@ -72,7 +79,7 @@ class AppController(QObject):
         fut.add_done_callback(lambda f: self._analysis_done.emit(seq, f))
 
     def _finish_analysis(self, seq: int, fut: concurrent.futures.Future) -> None:
-        if seq != self._analysis_seq:
+        if self._closing or seq != self._analysis_seq:
             return
         try:
             source = fut.result()
@@ -85,7 +92,7 @@ class AppController(QObject):
         self.state_changed.emit(self.state)
 
     def queue_selected(self, all_items: bool = False) -> int:
-        if not self.state.source:
+        if self._closing or not self.state.source:
             return 0
         items = self.state.source.items if all_items else [i for i in self.state.source.items if i.id in self.state.selected_ids]
         eligible = [i for i in items if (self.state.intent.include_shorts or i.is_short is not True) and (self.state.intent.include_live or not i.is_live)]
@@ -97,15 +104,19 @@ class AppController(QObject):
         return accepted
 
     def pause(self) -> None:
-        self.queue.pause()
+        if not self._closing:
+            self.queue.pause()
 
     def resume(self) -> None:
-        self.queue.resume()
+        if not self._closing:
+            self.queue.resume()
 
     def cancel(self) -> None:
         self.queue.cancel()
 
     def _apply_job(self, job: DownloadJob) -> None:
+        if self._closing:
+            return
         by_id = {j.job_id: j for j in self.state.jobs}
         by_id[job.job_id] = job
         self.state.jobs = list(by_id.values())
@@ -113,11 +124,15 @@ class AppController(QObject):
         self.state_changed.emit(self.state)
 
     def interpret_ai(self, text: str) -> None:
+        if self._closing:
+            return
         self.ai_status.emit("Menghubungkan" if self.agent.api_keys else "Mode lokal")
         fut = self._pool.submit(self.agent.interpret, text, self.state.active_url, self.state.intent)
         fut.add_done_callback(self._ai_done.emit)
 
     def _finish_ai(self, fut: concurrent.futures.Future) -> None:
+        if self._closing:
+            return
         try:
             result = fut.result()
         except Exception as exc:
@@ -144,6 +159,15 @@ class AppController(QObject):
             self.resume()
         elif result.intent.action == "cancel":
             self.cancel()
+
+    def shutdown(self) -> None:
+        """Hentikan worker saat aplikasi ditutup; aman dipanggil lebih dari sekali."""
+        if self._closing:
+            return
+        self._closing = True
+        self._analysis_seq += 1
+        self.queue.shutdown(wait=False)
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
     def disk_stats(self) -> tuple[int, int, int]:
         folder = Path(self.state.intent.output_folder or default_download_dir())
