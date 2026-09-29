@@ -93,5 +93,23 @@ $runtimeFiles = @(Get-ChildItem (Join-Path $verifyDir "_internal") -Recurse -Fil
 if ($exeSize -lt 100000) { throw "EXE portable terlalu kecil/tidak valid: $exeSize byte." }
 if ($runtimeFiles -lt 10) { throw "Runtime portable tampak tidak lengkap: hanya $runtimeFiles file." }
 
-Write-Host "Portable tervalidasi: EXE=$exeSize byte, runtime files=$runtimeFiles"
+# Jalankan tool yang dibundel dari hasil ekstrak, bukan dari PATH runner.
+$verifiedTools = Join-Path $verifyDir "tools"
+& (Join-Path $verifiedTools "ffmpeg.exe") -version | Select-Object -First 1 | Write-Host
+if ($LASTEXITCODE -ne 0) { throw "ffmpeg.exe bundled gagal dijalankan." }
+& (Join-Path $verifiedTools "ffprobe.exe") -version | Select-Object -First 1 | Write-Host
+if ($LASTEXITCODE -ne 0) { throw "ffprobe.exe bundled gagal dijalankan." }
+& (Join-Path $verifiedTools "deno.exe") --version | Select-Object -First 1 | Write-Host
+if ($LASTEXITCODE -ne 0) { throw "deno.exe bundled gagal dijalankan." }
+
+# Smoke-test EXE hasil ZIP: aplikasi GUI harus berhasil start dan tetap hidup beberapa detik.
+$verifiedExe = Join-Path $verifyDir "Pengunduh YouTube Massal.exe"
+$smoke = Start-Process -FilePath $verifiedExe -PassThru
+Start-Sleep -Seconds 4
+$smoke.Refresh()
+if ($smoke.HasExited) { throw "EXE portable keluar terlalu cepat saat smoke test. ExitCode=$($smoke.ExitCode)" }
+Stop-Process -Id $smoke.Id -Force
+$smoke.WaitForExit()
+
+Write-Host "Portable tervalidasi: EXE=$exeSize byte, runtime files=$runtimeFiles, GUI smoke test=OK"
 Write-Host "Portable ZIP: $zipPath"
