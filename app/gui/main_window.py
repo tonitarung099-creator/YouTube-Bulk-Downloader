@@ -34,14 +34,14 @@ class MainWindow(QMainWindow):
 
     def _build_home(self):
         scroll=QScrollArea();scroll.setObjectName("WorkspaceScroll");scroll.viewport().setObjectName("WorkspaceViewport");scroll.setWidgetResizable(True);scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        canvas=QWidget();canvas.setObjectName("Workspace");scroll.setWidget(canvas);lay=QVBoxLayout(canvas);lay.setContentsMargins(15,16,15,10);lay.setSpacing(12)
+        canvas=QWidget();canvas.setObjectName("Workspace");scroll.setWidget(canvas);lay=QVBoxLayout(canvas);lay.setContentsMargins(15,12,15,8);lay.setSpacing(9)
         toolbar=QHBoxLayout(); self.url=QLineEdit(); self.url.setPlaceholderText("Tempel URL video, playlist, atau channel YouTube…"); self.analyze_btn=QPushButton("Analisis"); self.start_btn=QPushButton("Mulai Unduh"); self.start_btn.setObjectName("Primary"); toolbar.addWidget(self.url,1); toolbar.addWidget(self.analyze_btn); toolbar.addWidget(self.start_btn); lay.addLayout(toolbar)
         self.source_card=SourceCard(); lay.addWidget(self.source_card)
         listbar=QHBoxLayout(); self.all_btn=QPushButton("Unduh Semua"); self.list_btn=QPushButton("Tampilkan Daftar Video"); self.partial_btn=QPushButton("Pilih Sebagian"); self.filter=QComboBox(); self.filter.addItems(["Semua jenis","Video","Shorts","Live"]); self.search=QLineEdit(); self.search.setPlaceholderText("Cari video"); self.search.setMaximumWidth(240)
         for w in (self.all_btn,self.list_btn,self.partial_btn): listbar.addWidget(w)
         listbar.addStretch(); listbar.addWidget(QLabel("Filter")); listbar.addWidget(self.filter); listbar.addWidget(self.search); lay.addLayout(listbar)
         self.model=VideoTableModel(); self.proxy=VideoFilterProxyModel(self); self.proxy.setSourceModel(self.model)
-        self.table=QTableView(); self.table.setModel(self.proxy);self.header=CheckableHeader(Qt.Horizontal,self.table);self.table.setHorizontalHeader(self.header); self.table.setAlternatingRowColors(True); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); self.table.setSortingEnabled(True); self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(58); self.table.setMinimumHeight(328); self.table.setMaximumHeight(350)
+        self.table=QTableView(); self.table.setModel(self.proxy);self.header=CheckableHeader(Qt.Horizontal,self.table);self.table.setHorizontalHeader(self.header); self.table.setAlternatingRowColors(True); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); self.table.setSortingEnabled(True); self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(49); self.table.setMinimumHeight(282); self.table.setMaximumHeight(296)
         self.thumbnail_delegate=ThumbnailDelegate(self.table);self.status_delegate=StatusBadgeDelegate(self.table);self.table.setItemDelegateForColumn(2,self.thumbnail_delegate);self.table.setItemDelegateForColumn(7,self.status_delegate)
         hdr=self.table.horizontalHeader(); hdr.setSectionResizeMode(3,QHeaderView.Stretch)
         for c,w in {0:34,1:38,2:133,4:72,5:72,6:88,7:118,8:38}.items(): hdr.resizeSection(c,w)
