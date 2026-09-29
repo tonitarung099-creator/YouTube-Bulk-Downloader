@@ -71,6 +71,38 @@ def test_duplicate_profile_is_blocked_while_pausing_and_paused(monkeypatch):
     q.cancel(first.job_id)
 
 
+def test_shutdown_cancels_active_and_queued_jobs_and_blocks_new_work(monkeypatch):
+    started = qm.threading.Event()
+
+    def controlled(self, intent, progress_cb=None, pause_event=None, cancel_event=None):
+        started.set()
+        while not cancel_event.is_set():
+            time.sleep(.003)
+        raise qm.DownloadCancelled("shutdown")
+
+    monkeypatch.setattr(qm.YouTubeDownloader, "download", controlled)
+    q = qm.QueueManager(max_workers=1)
+    intent = DownloadIntent(use_archive=False)
+    first = q.add(VideoItem(id="first", title="First", url="https://youtu.be/first"), intent)
+    assert started.wait(.5)
+    second = q.add(VideoItem(id="second", title="Second", url="https://youtu.be/second"), intent)
+
+    q.shutdown(wait=False)
+
+    for _ in range(100):
+        statuses = {j.job_id: j.status for j in q.jobs()}
+        if statuses.get(first.job_id) == JobStatus.CANCELLED:
+            break
+        time.sleep(.005)
+    statuses = {j.job_id: j.status for j in q.jobs()}
+    assert statuses[first.job_id] == JobStatus.CANCELLED
+    assert statuses[second.job_id] == JobStatus.CANCELLED
+
+    rejected = q.add(VideoItem(id="third", title="Third", url="https://youtu.be/third"), intent)
+    assert rejected.status == JobStatus.SKIPPED
+    assert "ditutup" in (rejected.error or "")
+
+
 def test_archive_is_written_after_success_and_is_profile_aware(monkeypatch, tmp_path):
     received = []
 
