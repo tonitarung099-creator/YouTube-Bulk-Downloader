@@ -20,10 +20,11 @@ class _Control:
 
 
 class QueueManager:
-    """Antrean paralel video dengan kontrol dan archive yang terkoordinasi."""
+    """Antrean paralel video dengan kontrol, archive, dan shutdown terkoordinasi."""
 
     ACTIVE = {JobStatus.QUEUED, JobStatus.DOWNLOADING, JobStatus.POSTPROCESSING, JobStatus.PAUSING}
     DUPLICATE_BLOCKING = ACTIVE | {JobStatus.PAUSED}
+    TERMINAL = {JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.FAILED, JobStatus.SKIPPED}
 
     def __init__(self, max_workers: int = 5, on_event: EventCallback | None = None) -> None:
         self.max_workers = max(1, min(10, max_workers))
@@ -34,15 +35,20 @@ class QueueManager:
         self._controls: dict[str, _Control] = {}
         self._lock = threading.RLock()
         self._archive = DownloadArchive()
+        self._closed = False
 
     def set_max_workers(self, max_workers: int) -> bool:
         target = max(1, min(10, int(max_workers)))
         with self._lock:
+            if self._closed:
+                return False
             self._pending_max_workers = target
         return self._maybe_reconfigure_executor()
 
     def _maybe_reconfigure_executor(self) -> bool:
         with self._lock:
+            if self._closed:
+                return False
             if self._pending_max_workers == self.max_workers:
                 return True
             if any(job.status in self.ACTIVE for job in self._jobs.values()):
@@ -65,12 +71,23 @@ class QueueManager:
 
     def add(self, video: VideoItem, intent: DownloadIntent) -> DownloadJob:
         job = DownloadJob(job_id=uuid.uuid4().hex, video=video.model_copy(deep=True), intent=intent.model_copy(deep=True))
+        with self._lock:
+            if self._closed:
+                job.status = JobStatus.SKIPPED
+                job.error = "Aplikasi sedang ditutup; antrean tidak menerima pekerjaan baru."
+                self._emit(job)
+                return job
         if self._archive.contains(video, intent):
             job.status = JobStatus.SKIPPED
             job.error = "Sudah pernah selesai dengan profil kualitas/format yang sama."
             self._emit(job)
             return job
         with self._lock:
+            if self._closed:
+                job.status = JobStatus.SKIPPED
+                job.error = "Aplikasi sedang ditutup; antrean tidak menerima pekerjaan baru."
+                self._emit(job)
+                return job
             duplicate = any(
                 self._same_profile(existing, video, intent)
                 and existing.status in self.DUPLICATE_BLOCKING
@@ -83,13 +100,17 @@ class QueueManager:
                 return job
             self._jobs[job.job_id] = job
             self._controls[job.job_id] = _Control(threading.Event(), threading.Event())
+            executor = self._executor
         self._emit(job)
-        self._executor.submit(self._run, job.job_id)
+        executor.submit(self._run, job.job_id)
         return job
 
     def _run(self, job_id: str) -> None:
-        job = self._jobs[job_id]
-        ctl = self._controls[job_id]
+        with self._lock:
+            job = self._jobs.get(job_id)
+            ctl = self._controls.get(job_id)
+        if not job or not ctl:
+            return
         if ctl.cancel.is_set():
             job.status = JobStatus.CANCELLED
             self._emit(job)
@@ -122,11 +143,13 @@ class QueueManager:
             code = downloader.download(worker_intent, progress, ctl.pause, ctl.cancel)
             if code != 0:
                 raise RuntimeError(f"yt-dlp selesai dengan kode {code}")
+            if ctl.cancel.is_set():
+                raise DownloadCancelled("Dibatalkan saat aplikasi ditutup.")
             self._archive.mark_completed(job.video, job.intent)
             job.status = JobStatus.COMPLETED
             job.percent = 100.0
         except DownloadPaused:
-            job.status = JobStatus.PAUSED
+            job.status = JobStatus.CANCELLED if ctl.cancel.is_set() else JobStatus.PAUSED
         except DownloadCancelled:
             job.status = JobStatus.CANCELLED
         except Exception as exc:
@@ -136,7 +159,10 @@ class QueueManager:
         self._maybe_reconfigure_executor()
 
     def pause(self, job_id: str | None = None) -> None:
-        targets = [job_id] if job_id else list(self._controls)
+        with self._lock:
+            if self._closed:
+                return
+            targets = [job_id] if job_id else list(self._controls)
         for jid in targets:
             job = self._jobs.get(jid)
             ctl = self._controls.get(jid)
@@ -146,7 +172,11 @@ class QueueManager:
                 self._emit(job)
 
     def resume(self, job_id: str | None = None) -> None:
-        targets = [job_id] if job_id else list(self._controls)
+        with self._lock:
+            if self._closed:
+                return
+            targets = [job_id] if job_id else list(self._controls)
+            executor = self._executor
         for jid in targets:
             job = self._jobs.get(jid)
             ctl = self._controls.get(jid)
@@ -154,19 +184,38 @@ class QueueManager:
                 ctl.pause.clear()
                 job.status = JobStatus.QUEUED
                 self._emit(job)
-                self._executor.submit(self._run, jid)
+                executor.submit(self._run, jid)
 
     def cancel(self, job_id: str | None = None) -> None:
-        targets = [job_id] if job_id else list(self._controls)
+        with self._lock:
+            targets = [job_id] if job_id else list(self._controls)
         for jid in targets:
             ctl = self._controls.get(jid)
             job = self._jobs.get(jid)
-            if ctl and job and job.status not in {JobStatus.COMPLETED, JobStatus.CANCELLED}:
+            if ctl and job and job.status not in self.TERMINAL:
                 ctl.cancel.set()
                 if job.status in {JobStatus.QUEUED, JobStatus.PAUSED}:
                     job.status = JobStatus.CANCELLED
                     self._emit(job)
         self._maybe_reconfigure_executor()
+
+    def shutdown(self, wait: bool = False) -> None:
+        """Tutup antrean secara idempotent dan hentikan pekerjaan secepat yang aman."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            executor = self._executor
+            updates: list[DownloadJob] = []
+            for jid, ctl in self._controls.items():
+                ctl.cancel.set()
+                job = self._jobs.get(jid)
+                if job and job.status in {JobStatus.QUEUED, JobStatus.PAUSED}:
+                    job.status = JobStatus.CANCELLED
+                    updates.append(job.model_copy(deep=True))
+        for job in updates:
+            self._emit(job)
+        executor.shutdown(wait=wait, cancel_futures=True)
 
     def jobs(self) -> list[DownloadJob]:
         with self._lock:
