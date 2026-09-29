@@ -9,5 +9,10 @@ datas += [("app/assets/icons", "app/assets/icons")]
 a=Analysis(["main.py"], pathex=["."], binaries=binaries, datas=datas, hiddenimports=hiddenimports,
            noarchive=False)
 pyz=PYZ(a.pure)
-exe=EXE(pyz,a.scripts,[],exclude_binaries=True,name="Pengunduh YouTube Massal",console=False)
+exe=EXE(
+    pyz,a.scripts,[],exclude_binaries=True,
+    name="Pengunduh YouTube Massal",
+    console=False,
+    contents_directory="_internal",
+)
 coll=COLLECT(exe,a.binaries,a.datas,strip=False,upx=False,name="Pengunduh YouTube Massal")
