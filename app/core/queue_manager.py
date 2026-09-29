@@ -23,6 +23,7 @@ class QueueManager:
     """Antrean paralel video dengan kontrol dan archive yang terkoordinasi."""
 
     ACTIVE = {JobStatus.QUEUED, JobStatus.DOWNLOADING, JobStatus.POSTPROCESSING, JobStatus.PAUSING}
+    DUPLICATE_BLOCKING = ACTIVE | {JobStatus.PAUSED}
 
     def __init__(self, max_workers: int = 5, on_event: EventCallback | None = None) -> None:
         self.max_workers = max(1, min(10, max_workers))
@@ -72,7 +73,7 @@ class QueueManager:
         with self._lock:
             duplicate = any(
                 self._same_profile(existing, video, intent)
-                and existing.status in {JobStatus.QUEUED, JobStatus.DOWNLOADING, JobStatus.POSTPROCESSING}
+                and existing.status in self.DUPLICATE_BLOCKING
                 for existing in self._jobs.values()
             )
             if duplicate:
