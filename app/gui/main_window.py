@@ -30,7 +30,7 @@ class MainWindow(QMainWindow):
             page=self._build_extra(name); self.extra_pages[name]=page; self.pages.addWidget(page)
         self.ai=GeminiPanel(); self.ai.setMinimumWidth(280); self.ai.setMaximumWidth(520); self.splitter.addWidget(self.ai); self.splitter.setSizes([205,1076,391])
         self.setStyleSheet(STYLESHEET)
-        self._wire(); self.settings.load_intent(self.controller.state.intent); self._refresh_disk()
+        self._wire(); self.settings.load_intent(self.controller.state.intent); self._refresh_disk();self._refresh_progress_summary()
 
     def _build_home(self):
         scroll=QScrollArea();scroll.setObjectName("WorkspaceScroll");scroll.viewport().setObjectName("WorkspaceViewport");scroll.setWidgetResizable(True);scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -84,14 +84,16 @@ class MainWindow(QMainWindow):
     def _sync_selected(self,*_): self.controller.state.selected_ids={i.id for i in self.model.items if i.selected}
     def _apply_filter(self,*_):
         choice=self.filter.currentText();self.proxy.set_kind(None if choice=="Semua jenis" else choice);self.proxy.set_search(self.search.text());self.header.viewport().update()
+    def _refresh_progress_summary(self):
+        jobs=self.controller.state.jobs;active=sum(str(j.status) in {"downloading","postprocessing","pausing"} for j in jobs);queued=sum(str(j.status)=="queued" for j in jobs);self.progress.set_summary(active,queued)
     def _job_changed(self,j):
-        self.progress.set_job(j); self._refresh_extra()
+        self.progress.set_job(j);self._refresh_progress_summary(); self._refresh_extra()
         for item in self.model.items:
             if item.id==j.video.id: item.status=j.status
         if self.model.items: self.model.layoutChanged.emit()
     def _state_changed(self,state):
         if state.active_url and self.url.text()!=state.active_url: self.url.setText(state.active_url)
-        self.settings.load_intent(state.intent); self._refresh_disk()
+        self.settings.load_intent(state.intent); self._refresh_disk();self._refresh_progress_summary()
     def _refresh_disk(self):
         try:self.sidebar.set_disk(*self.controller.disk_stats())
         except Exception: pass
