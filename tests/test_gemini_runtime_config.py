@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from PySide6.QtWidgets import QApplication
+
 import app.ai.gemini_agent as agent_module
 from app.ai.gemini_agent import GeminiLanguageAgent
 from app.gui.widgets.gemini_settings import GeminiSettings
@@ -13,6 +15,19 @@ def test_api_input_accepts_lines_commas_semicolons_and_caps_at_100() -> None:
     assert keys[:3] == ["key-a", "key-b", "key-c"]
     assert len(keys) == 100
     assert len(set(keys)) == 100
+
+
+def test_settings_widget_really_emits_keys_and_model() -> None:
+    QApplication.instance() or QApplication([])
+    widget = GeminiSettings()
+    captured: list[tuple[list[str], str]] = []
+    widget.save_requested.connect(lambda keys, model: captured.append((keys, model)))
+    widget.keys.setPlainText("key-a\nkey-b")
+    widget.model.setCurrentText("gemini-3.1-flash-lite")
+    widget.save.click()
+
+    assert captured == [(["key-a", "key-b"], "gemini-3.1-flash-lite")]
+    assert widget.keys.toPlainText() == ""
 
 
 def test_agent_keys_can_be_replaced_at_runtime() -> None:
