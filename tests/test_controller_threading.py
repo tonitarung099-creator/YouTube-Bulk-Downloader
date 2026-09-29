@@ -33,21 +33,38 @@ class _FakeQueue:
     def __init__(self, max_workers, on_event):
         self.max_workers = max_workers
         self.on_event = on_event
+        self.shutdown_calls = 0
 
     def set_max_workers(self, max_workers):
         self.max_workers = max_workers
         return True
 
+    def shutdown(self, wait=False):
+        self.shutdown_calls += 1
 
-def test_queue_worker_callback_updates_state_only_on_qt_main_thread(monkeypatch, tmp_path) -> None:
-    app = QApplication.instance() or QApplication([])
+    def pause(self):
+        return None
+
+    def resume(self):
+        return None
+
+    def cancel(self):
+        return None
+
+
+def _controller(monkeypatch, tmp_path) -> AppController:
+    QApplication.instance() or QApplication([])
     monkeypatch.setattr(controller_module, "JsonStorage", _FakeStorage)
     monkeypatch.setattr(controller_module, "SourceService", _FakeSourceService)
     monkeypatch.setattr(controller_module, "GeminiLanguageAgent", _FakeAgent)
     monkeypatch.setattr(controller_module, "QueueManager", _FakeQueue)
     monkeypatch.setattr(controller_module, "default_download_dir", lambda: tmp_path)
+    return AppController()
 
-    controller = AppController()
+
+def test_queue_worker_callback_updates_state_only_on_qt_main_thread(monkeypatch, tmp_path) -> None:
+    app = QApplication.instance() or QApplication([])
+    controller = _controller(monkeypatch, tmp_path)
     main_thread_id = threading.get_ident()
     delivered_on: list[int] = []
     controller.job_changed.connect(lambda _job: delivered_on.append(threading.get_ident()))
@@ -72,5 +89,21 @@ def test_queue_worker_callback_updates_state_only_on_qt_main_thread(monkeypatch,
 
     assert [j.job_id for j in controller.state.jobs] == ["job-1"]
     assert delivered_on == [main_thread_id]
+    controller.shutdown()
 
-    controller._pool.shutdown(wait=False, cancel_futures=True)
+
+def test_controller_shutdown_is_idempotent_and_rejects_new_async_work(monkeypatch, tmp_path) -> None:
+    controller = _controller(monkeypatch, tmp_path)
+    seq_before = controller._analysis_seq
+
+    controller.shutdown()
+    controller.shutdown()
+
+    assert controller._closing is True
+    assert controller._analysis_seq == seq_before + 1
+    assert controller.queue.shutdown_calls == 1
+
+    controller.analyze("https://youtu.be/ignored")
+    controller.interpret_ai("cek video")
+    assert controller.state.active_url is None
+    assert controller._analysis_seq == seq_before + 1
