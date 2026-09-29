@@ -13,6 +13,7 @@ from app.gui.models.video_table_model import VideoTableModel
 from app.gui.models.video_filter_proxy import VideoFilterProxyModel
 from app.gui.theme import STYLESHEET
 from app.gui.widgets.checkable_header import CheckableHeader
+from app.gui.widgets.gemini_settings import GeminiSettings
 from app.gui.widgets.panels import TitleBar,Sidebar,SourceCard,DownloadSettings,ProgressPanel,GeminiPanel
 
 
@@ -26,11 +27,13 @@ class MainWindow(QMainWindow):
         self.pages=QStackedWidget(); self.pages.setMinimumWidth(560); self.splitter.addWidget(self.pages)
         self.home=self._build_home(); self.pages.addWidget(self.home)
         self.extra_pages={}
-        for name in ["Unduhan","Playlist","Channel","Riwayat","Pengaturan"]:
+        for name in ["Unduhan","Playlist","Channel","Riwayat"]:
             page=self._build_extra(name); self.extra_pages[name]=page; self.pages.addWidget(page)
+        self.settings_page=self._build_settings_page(); self.extra_pages["Pengaturan"]=self.settings_page; self.pages.addWidget(self.settings_page)
         self.ai=GeminiPanel(); self.ai.setMinimumWidth(280); self.ai.setMaximumWidth(520); self.splitter.addWidget(self.ai); self.splitter.setSizes([205,1076,391])
         self.setStyleSheet(STYLESHEET)
         self._wire(); self.settings.load_intent(self.controller.state.intent); self._refresh_disk();self._refresh_progress_summary()
+        count,model=self.controller.gemini_config();self.gemini_settings.set_config(count,model);self.ai.status.setText(f"Siap • {count} key" if count else "Belum dikonfigurasi")
 
     def _build_home(self):
         scroll=QScrollArea();scroll.setObjectName("WorkspaceScroll");scroll.viewport().setObjectName("WorkspaceViewport");scroll.setWidgetResizable(True);scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -52,16 +55,21 @@ class MainWindow(QMainWindow):
 
     def _build_extra(self,name):
         w=QWidget();w.setObjectName("Workspace");lay=QVBoxLayout(w); lay.setContentsMargins(22,22,22,22); title=QLabel(name); title.setObjectName("Heading"); lay.addWidget(title)
-        box=QTextEdit(); box.setReadOnly(True); box.setObjectName(f"{name}Text"); lay.addWidget(box,1)
-        if name=="Pengaturan":
-            box.setHtml("<b>Gemini</b><br>API key dibaca dari GEMINI_API_KEYS / GEMINI_API_KEY dan tidak disimpan di repository.<br><br><b>Model Flash Lite</b><br>1. gemini-3.5-flash-lite<br>2. gemini-3.1-flash-lite<br>3. gemini-2.5-flash-lite<br><br>Jika model utama gagal/tidak tersedia, AI otomatis memakai model berikutnya. GEMINI_MODEL hanya menerima salah satu dari tiga model tersebut.<br><br><b>Portable</b><br>Konfigurasi non-rahasia tersimpan di folder data aplikasi.")
-        else: box.setPlainText("Belum ada data.")
+        box=QTextEdit(); box.setReadOnly(True); box.setObjectName(f"{name}Text"); lay.addWidget(box,1); box.setPlainText("Belum ada data.")
         return w
+
+    def _build_settings_page(self):
+        scroll=QScrollArea();scroll.setObjectName("WorkspaceScroll");scroll.setWidgetResizable(True);scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        w=QWidget();w.setObjectName("Workspace");scroll.setWidget(w);lay=QVBoxLayout(w);lay.setContentsMargins(22,22,22,22);lay.setSpacing(12)
+        title=QLabel("Pengaturan");title.setObjectName("Heading");lay.addWidget(title)
+        self.gemini_settings=GeminiSettings();lay.addWidget(self.gemini_settings);lay.addStretch(1)
+        return scroll
 
     def _wire(self):
         self.sidebar.page_requested.connect(self._go_page); self.url.returnPressed.connect(self._analyze); self.analyze_btn.clicked.connect(self._analyze); self.list_btn.clicked.connect(self._analyze); self.start_btn.clicked.connect(lambda:self._start(False)); self.all_btn.clicked.connect(lambda:self._start(True)); self.partial_btn.clicked.connect(self._select_mode)
         self.search.textChanged.connect(self.proxy.set_search); self.filter.currentTextChanged.connect(self._apply_filter); self.settings.changed.connect(lambda d:self.controller.update_intent(**d)); self.progress.pause_clicked.connect(self.controller.pause); self.progress.resume_clicked.connect(self.controller.resume); self.progress.cancel_clicked.connect(self.controller.cancel); self.ai.send.connect(self.controller.interpret_ai); self.model.dataChanged.connect(self._sync_selected);self.model.dataChanged.connect(lambda *_:self.header.viewport().update())
-        self.controller.source_loaded.connect(self._source_loaded); self.controller.analysis_failed.connect(self._analysis_error); self.controller.job_changed.connect(self._job_changed); self.controller.ai_reply.connect(lambda text,_:self.ai.add_ai(text)); self.controller.ai_status.connect(self.ai.status.setText); self.controller.state_changed.connect(self._state_changed); self.source_card.open_channel.connect(self._open_channel)
+        self.gemini_settings.save_requested.connect(self.controller.configure_gemini);self.gemini_settings.test_requested.connect(self.controller.test_gemini);self.gemini_settings.clear_requested.connect(self.controller.clear_gemini_keys)
+        self.controller.source_loaded.connect(self._source_loaded); self.controller.analysis_failed.connect(self._analysis_error); self.controller.job_changed.connect(self._job_changed); self.controller.ai_reply.connect(lambda text,_:self.ai.add_ai(text)); self.controller.ai_status.connect(self.ai.status.setText); self.controller.state_changed.connect(self._state_changed); self.controller.gemini_config_changed.connect(self.gemini_settings.set_config);self.controller.gemini_test_result.connect(self.gemini_settings.set_test_result);self.source_card.open_channel.connect(self._open_channel)
 
     def _go_page(self,name):
         names=["Beranda","Unduhan","Playlist","Channel","Riwayat","Pengaturan"]; self.pages.setCurrentIndex(names.index(name)); self._refresh_extra()
