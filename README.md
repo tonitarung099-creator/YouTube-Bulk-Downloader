@@ -7,7 +7,9 @@ Aplikasi Windows desktop untuk menganalisis dan mengunduh video, playlist, atau 
 - Video/playlist/channel, tabel seleksi, pencarian/filter, progres, antrean paralel video, jeda/lanjut/batal.
 - 1080p sebagai batas maksimum yang ketat, mode audio, subtitle/thumbnail/metadata, archive anti-duplikat.
 - Gemini sampai 100 API key dengan rotasi; tanpa key tetap ada parser lokal.
-- AI hanya memakai tiga model Flash Lite: `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` → `gemini-2.5-flash-lite`. Jika model utama gagal/tidak tersedia, agent turun ke model berikutnya. `GEMINI_MODEL` hanya boleh memilih salah satu dari tiga model tersebut.
+- API Gemini dapat dimasukkan langsung lewat **Pengaturan → Konfigurasi API Gemini**, kemudian diuji dengan tombol **Tes API**. Key yang ditempel tidak dicetak ke log; versi saat ini menyimpannya hanya selama sesi aplikasi.
+- AI hanya memakai tiga model Flash Lite: `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` → `gemini-2.5-flash-lite`. Jika model utama gagal/tidak tersedia, agent turun ke model berikutnya.
+- Perintah AI `download/unduh` kini benar-benar menjalankan alur: bila URL belum dianalisis, aplikasi menganalisis dulu lalu memasukkan hasil ke antrean otomatis.
 - CLI lama tetap tersedia: `python main.py "cek URL" --url <URL>`; tanpa argumen membuka GUI.
 - Build Windows `onedir` + ZIP portable dengan FFmpeg, ffprobe, QuickJS-NG, verifikasi isi ZIP, dan smoke-test EXE hasil ekstrak.
 
@@ -18,7 +20,7 @@ py -m venv .venv
 pip install ".[gui,dev]"
 python main.py
 ```
-Salin `.env.example` ke `.env` bila memakai Gemini. Jangan commit API key.
+Environment variable `GEMINI_API_KEYS`, `GEMINI_API_KEY`, dan `GEMINI_MODEL` tetap didukung untuk developer. Jangan commit API key.
 
 ## Jika YouTube meminta verifikasi/cookie
 Pada sebagian jaringan atau IP, YouTube dapat menampilkan pesan seperti **"Sign in to confirm you're not a bot"**. Aplikasi mendukung cookie Netscape secara opsional untuk kasus tersebut.
