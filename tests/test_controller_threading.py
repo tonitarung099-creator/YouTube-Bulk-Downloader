@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtWidgets import QApplication
 
 import app.controllers.app_controller as controller_module
 from app.controllers.app_controller import AppController
@@ -40,7 +40,7 @@ class _FakeQueue:
 
 
 def test_queue_worker_callback_updates_state_only_on_qt_main_thread(monkeypatch, tmp_path) -> None:
-    app = QCoreApplication.instance() or QCoreApplication([])
+    app = QApplication.instance() or QApplication([])
     monkeypatch.setattr(controller_module, "JsonStorage", _FakeStorage)
     monkeypatch.setattr(controller_module, "SourceService", _FakeSourceService)
     monkeypatch.setattr(controller_module, "GeminiLanguageAgent", _FakeAgent)
