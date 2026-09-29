@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import app.ai.gemini_agent as agent_module
 from app.ai.gemini_agent import GeminiLanguageAgent
 from app.core.source_service import SourceService
 
@@ -18,6 +21,33 @@ def test_general_mp3_question_is_chat_not_download_command() -> None:
     result = agent.interpret("Apa itu MP3 dan apa bedanya dengan M4A?")
     assert result.kind == "chat"
     assert result.intent.action == "unknown"
+
+
+def test_chat_question_uses_gemini_when_api_key_exists(monkeypatch) -> None:
+    calls = []
+
+    class FakeModels:
+        def generate_content(self, *, model, contents, config):
+            calls.append((model, contents, config))
+            return SimpleNamespace(text="Saya bisa menjawab pertanyaan dan menjalankan aksi aplikasi.")
+
+    class FakeClient:
+        def __init__(self, api_key):
+            assert api_key == "test-key"
+            self.models = FakeModels()
+
+    monkeypatch.setattr(agent_module.genai, "Client", FakeClient)
+    monkeypatch.setattr(agent_module.types, "GenerateContentConfig", lambda **kwargs: kwargs)
+
+    agent = GeminiLanguageAgent(api_keys=["test-key"])
+    result = agent.interpret("kamu bisa melakukan apa saja?")
+
+    assert result.kind == "chat"
+    assert result.provider == "gemini"
+    assert result.reply_text.startswith("Saya bisa")
+    assert calls
+    assert "system_instruction" in calls[0][2]
+    assert "response_schema" not in calls[0][2]
 
 
 def test_search_and_download_command_builds_safe_local_plan() -> None:
